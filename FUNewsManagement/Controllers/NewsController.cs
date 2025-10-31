@@ -34,7 +34,7 @@ namespace FUNewsManagement.Controllers
                 return NotFound();
 
             var newsArticle = await _newsService.GetNewsByIdAsync(id);
-            if (newsArticle == null || !newsArticle.IsActive)
+            if (newsArticle == null || !newsArticle.NewsStatus != true)
                 return NotFound();
 
             return View(newsArticle);
@@ -221,7 +221,7 @@ namespace FUNewsManagement.Controllers
                 endDate = DateTime.Now.Date;
             }
 
-            var newsInPeriod = await _newsService.GetNewsByPeriodAsync(startDate.Value, endDate.Value);
+            var newsInPeriod = await _newsService.GetNewsByDateRangeAsync(startDate.Value, endDate.Value);
             ViewBag.StartDate = startDate.Value.ToShortDateString();
             ViewBag.EndDate = endDate.Value.ToShortDateString();
             return View(newsInPeriod);

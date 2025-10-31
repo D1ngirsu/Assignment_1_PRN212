@@ -148,7 +148,7 @@ namespace FUNewsManagement.Controllers
             try
             {
                 var category = await _categoryService.GetCategoryWithNewsAsync(id);
-                if (category?.News?.Any() == true)
+                if (category?.NewsArticles?.Any() == true)
                 {
                     TempData["ErrorMessage"] = "Cannot delete category because it is associated with news articles.";
                     return RedirectToAction(nameof(Index));
