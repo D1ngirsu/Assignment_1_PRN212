@@ -1,4 +1,4 @@
-﻿<!-- Updated Index.cshtml -->
+﻿<!-- Updated Index.cshtml (add TempData alerts and pagination UI) -->
 @model FUNewsManagement.Models.ViewModels.NewsListViewModel
 @using FUNewsManagement.Helpers  @* Import SessionManager *@
 @using Services  @* Import UserRoles từ Services namespace *@
@@ -11,6 +11,22 @@
 }
 
 <h1>News Articles</h1>
+
+<!-- Hiển thị Success/Error Message từ TempData -->
+@if (TempData["SuccessMessage"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        @TempData["SuccessMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        @TempData["ErrorMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
 
 <!-- Search Form -->
 <form asp-action="Search" method="get" class="mb-3">
@@ -71,6 +87,34 @@
     </tbody>
 </table>
 
+<!-- Pagination -->
+@if (Model.TotalPages > 1)
+{
+    <nav aria-label="News pagination">
+        <ul class="pagination justify-content-center">
+            @if (Model.CurrentPage > 1)
+            {
+                <li class="page-item">
+                    <a class="page-link" asp-action="Index" asp-route-keyword="@Model.SearchKeyword" asp-route-page="@(Model.CurrentPage - 1)">Previous</a>
+                </li>
+            }
+            @for (int i = 1; i <= Model.TotalPages; i++)
+            {
+                <li class="page-item @(i == Model.CurrentPage ? "active" : "")">
+                    <a class="page-link" asp-action="Index" asp-route-keyword="@Model.SearchKeyword" asp-route-page="@i">@i</a>
+                </li>
+            }
+            @if (Model.CurrentPage < Model.TotalPages)
+            {
+                <li class="page-item">
+                    <a class="page-link" asp-action="Index" asp-route-keyword="@Model.SearchKeyword" asp-route-page="@(Model.CurrentPage + 1)">Next</a>
+                </li>
+            }
+        </ul>
+    </nav>
+}
+
+<!-- Updated modal in Index.cshtml (add Headline field) -->
 @if (canManage)
 {
     <!-- Modal for Create/Edit -->
@@ -87,16 +131,21 @@
                         @Html.AntiForgeryToken()
                         <input type="hidden" name="NewsArticleId" id="newsId" />
                         <div class="mb-3">
-                            <label class="form-label">Title</label>
-                            <input type="text" name="NewsTitle" id="newsTitle" class="form-control" required />
+                            <label class="form-label">Headline <span class="text-danger">*</span></label>
+                            <input type="text" name="Headline" id="newsHeadline" class="form-control" required placeholder="Short headline for the article" />
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Content</label>
+                            <label class="form-label">Title <span class="text-danger">*</span></label>
+                            <input type="text" name="NewsTitle" id="newsTitle" class="form-control" required placeholder="Full title of the article" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Content <span class="text-danger">*</span></label>
                             <textarea name="NewsContent" id="newsContent" class="form-control" rows="5" required></textarea>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Category</label>
+                            <label class="form-label">Category <span class="text-danger">*</span></label>
                             <select name="CategoryId" id="categorySelect" class="form-select" required>
+                                <option value="">-- Select Category --</option>
                                 @foreach (var cat in ViewBag.Categories ?? new List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>())
                                 {
                                     <option value="@cat.Value">@cat.Text</option>
@@ -113,7 +162,8 @@
                             </select>
                         </div>
                         <div class="mb-3 form-check">
-                            <input type="checkbox" name="NewsStatus" id="newsStatus" class="form-check-input" checked />
+                            <input type="hidden" name="NewsStatus" value="false" />  <!-- Hidden false -->
+                            <input type="checkbox" name="NewsStatus" id="newsStatus" value="true" class="form-check-input" checked />
                             <label class="form-check-label">Active</label>
                         </div>
                     </div>
@@ -126,20 +176,19 @@
         </div>
     </div>
 }
-
 @section Scripts {
     <script>
-        function loadCreateForm() {
+                function loadCreateForm() {
             document.getElementById('newsForm').action = '@Url.Action("Create")';
             document.getElementById('newsId').value = '';
-            document.querySelector('#newsForm input[name="NewsTitle"]').value = '';
-            document.querySelector('#newsForm textarea[name="NewsContent"]').value = '';
-            document.querySelector('#newsForm select[name="CategoryId"]').value = '';
-            document.querySelector('#newsForm select[name="SelectedTagIds"]').selectedIndex = -1;
-            document.querySelector('#newsForm input[name="NewsStatus"]').checked = true;
-            document.getElementById('newsModal').querySelector('.modal-title').textContent = 'Create News';
-            // Clear all selections in multi-select
-            Array.from(document.querySelector('#newsForm select[name="SelectedTagIds"]').options).forEach(option => option.selected = false);
+            document.getElementById('newsHeadline').value = '';
+            document.getElementById('newsTitle').value = '';
+            document.getElementById('newsContent').value = '';
+            document.getElementById('categorySelect').value = '';
+            const tagSelect = document.getElementById('tagsSelect');
+            Array.from(tagSelect.options).forEach(option => option.selected = false);
+            document.getElementById('newsStatus').checked = true;
+            document.querySelector('.modal-title').textContent = 'Create News';
         }
 
         function loadEditForm(id) {
@@ -148,6 +197,7 @@
                 .then(data => {
                     if (data.success) {
                         document.getElementById('newsId').value = data.newsArticleId;
+                        document.getElementById('newsHeadline').value = data.headline || data.newsTitle; // Fallback to title if no headline
                         document.getElementById('newsTitle').value = data.newsTitle;
                         document.getElementById('newsContent').value = data.newsContent;
                         document.getElementById('categorySelect').value = data.categoryId;
@@ -164,7 +214,7 @@
 
                         document.getElementById('newsStatus').checked = data.newsStatus;
                         document.getElementById('newsForm').action = '@Url.Action("Edit")';
-                        document.getElementById('newsModal').querySelector('.modal-title').textContent = 'Edit News';
+                        document.querySelector('.modal-title').textContent = 'Edit News';
                     } else {
                         alert('Error loading data: ' + data.message);
                     }

@@ -1,4 +1,5 @@
-﻿using BusinessObjects.Models;
+﻿// Updated NewsFormViewModel.cs
+using BusinessObjects.Models;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using System;
 using System.Collections.Generic;
@@ -14,10 +15,15 @@ namespace FUNewsManagement.Models.ViewModels
         [StringLength(500, ErrorMessage = "Tiêu đề không được vượt quá 500 ký tự")]
         public string NewsTitle { get; set; } = string.Empty;
 
+        [Required(ErrorMessage = "Tiêu đề phụ (Headline) là bắt buộc")]
+        [StringLength(200, ErrorMessage = "Headline không được vượt quá 200 ký tự")]
+        public string Headline { get; set; } = string.Empty;
+
         [Required(ErrorMessage = "Nội dung là bắt buộc")]
         public string NewsContent { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Danh mục là bắt buộc")]
+        [Range(1, short.MaxValue, ErrorMessage = "Vui lòng chọn danh mục hợp lệ")]
         public short CategoryId { get; set; }
 
         public List<SelectListItem> Categories { get; set; } = new List<SelectListItem>();

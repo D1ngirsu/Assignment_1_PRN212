@@ -3,29 +3,247 @@
     ViewData["Title"] = "Manage Accounts";
 }
 
-<h1>Manage Accounts</h1>
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Quản lý tài khoản</h2>
+        
+    </div>
 
-<!-- Search similar to others -->
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            @TempData["SuccessMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
 
-<table class="table">
-    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Actions</th></tr></thead>
-    <tbody>
-        @foreach (var item in Model.Accounts)
-        {
-            <tr>
-                <td>@item.AccountName</td>
-                <td>@item.AccountEmail</td>
-                <td>@(item.AccountRole == 1 ? "Staff" : item.AccountRole == 2 ? "Lecturer" : "Admin")</td>
-                <td>
-                    <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#accountModal" onclick="loadEditForm('@item.AccountId', 'Account')">Edit</button>
-                    <!-- No delete for accounts, or add with confirm -->
-                </td>
-            </tr>
-        }
-    </tbody>
-</table>
+    @if (TempData["ErrorMessage"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            @TempData["ErrorMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
 
-<!-- Modal for Edit User, fields: Name, Email, Role dropdown (exclude self role if needed) -->
-<div class="modal fade" id="accountModal">
-    <!-- Similar structure, action to EditUser -->
+    <!-- Search Form -->
+    <form method="get" asp-action="ManageAccounts" class="mb-4">
+        <div class="row g-3">
+            <div class="col-md-8">
+                <input type="text" name="keyword" value="@Model.SearchKeyword"
+                       class="form-control" placeholder="Tìm kiếm theo tên hoặc email..." />
+            </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-secondary me-2">
+                    <i class="bi bi-search"></i> Tìm kiếm
+                </button>
+                <a asp-action="ManageAccounts" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-clockwise"></i> Làm mới
+                </a>
+            </div>
+        </div>
+    </form>
+
+    <!-- Accounts Table -->
+    <div class="card">
+        <div class="card-body">
+            @if (Model.Accounts.Any())
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>ID</th>
+                                <th>Tên tài khoản</th>
+                                <th>Email</th>
+                                <th>Vai trò</th>
+                                <th class="text-center">Thao tác</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in Model.Accounts)
+                            {
+                                <tr>
+                                    <td>@item.AccountId</td>
+                                    <td>@item.AccountName</td>
+                                    <td>@item.AccountEmail</td>
+                                    <td>
+                                        @if (item.AccountRole == 1)
+                                        {
+                                            <span class="badge bg-info">Staff</span>
+                                        }
+                                        else if (item.AccountRole == 2)
+                                        {
+                                            <span class="badge bg-success">Lecturer</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-danger">Admin</span>
+                                        }
+                                    </td>
+                                    <td class="text-center">
+                                        <button class="btn btn-sm btn-warning"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#accountModal"
+                                                onclick="loadEditForm(@item.AccountId)">
+                                            <i class="bi bi-pencil"></i> Sửa
+                                        </button>
+                                        <button class="btn btn-sm btn-danger"
+                                                onclick="confirmDelete(@item.AccountId, '@item.AccountName')">
+                                            <i class="bi bi-trash"></i> Xóa
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-info text-center">
+                    <i class="bi bi-info-circle"></i> Không tìm thấy tài khoản nào.
+                </div>
+            }
+        </div>
+    </div>
 </div>
+
+<!-- Modal for Create/Edit Account -->
+<div class="modal fade" id="accountModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="accountModalLabel">Tài khoản</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="accountModalBody">
+                <!-- Content will be loaded here -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">Xác nhận xóa</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Bạn có chắc chắn muốn xóa tài khoản <strong id="deleteAccountName"></strong>?</p>
+                <p class="text-danger">Hành động này không thể hoàn tác!</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                <form id="deleteForm" method="post" style="display: inline;">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="btn btn-danger">Xóa</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        function loadCreateForm() {
+            document.getElementById('accountModalLabel').textContent = 'Thêm tài khoản mới';
+            fetch('@Url.Action("CreateUser", "Account")')
+                .then(response => response.text())
+                .then(html => {
+                    document.getElementById('accountModalBody').innerHTML = html;
+                    // Thêm listener cho create form nếu cần (tương tự edit)
+                    attachFormSubmitHandler('createForm');
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Không thể tải form. Vui lòng thử lại.');
+                });
+        }
+
+        function loadEditForm(accountId) {
+            document.getElementById('accountModalLabel').textContent = 'Chỉnh sửa tài khoản';
+            fetch('@Url.Action("EditUser", "Account")/' + accountId)
+                .then(response => response.text())
+                .then(html => {
+                    document.getElementById('accountModalBody').innerHTML = html;
+                    // Attach AJAX submit handler cho edit form
+                    attachFormSubmitHandler('editForm');
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Không thể tải form. Vui lòng thử lại.');
+                });
+        }
+
+        function confirmDelete(accountId, accountName) {
+            document.getElementById('deleteAccountName').textContent = accountName;
+            document.getElementById('deleteForm').action = '@Url.Action("DeleteUser", "Account")/' + accountId;
+
+            var deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+            deleteModal.show();
+        }
+
+        // Hàm mới: Handle AJAX submit cho forms trong modal (create/edit)
+        function attachFormSubmitHandler(formId) {
+            const form = document.getElementById(formId);
+            if (form) {
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault(); // Ngăn full page submit
+
+                    const formData = new FormData(form);
+                    const url = form.action; // Lấy từ asp-action
+
+                    fetch(url, {
+                        method: 'POST',
+                        body: formData // Bao gồm anti-forgery token
+                    })
+                    .then(response => {
+                                if (response.ok) {
+            return response.json(); // Đổi thành json
+        } else {
+            return response.json().then(data => {
+                console.error('Error data:', data);
+                throw new Error(data.message || 'Lỗi không xác định');
+            });
+        }
+                    })
+                    .then(data => {
+                                if (data.success) {
+            // Thành công
+            bootstrap.Modal.getInstance(document.getElementById('accountModal')).hide();
+            location.reload();
+        } else {
+            // Lỗi: hiển thị message
+            alert('Lỗi khi lưu: ' + data.message);
+            // Nếu có errors dict, có thể highlight field
+            if (data.errors) {
+                Object.keys(data.errors).forEach(key => {
+                    const field = document.querySelector(`[name="${key}"]`);
+                    if (field) field.classList.add('is-invalid');
+                });
+            }
+        }
+                    })
+                    .catch(error => {
+                        console.error('Submit error:', error);
+                        if (error.message.includes('<')) {
+                            document.getElementById('accountModalBody').innerHTML = error.message;
+                            attachFormSubmitHandler(formId); // Re-attach listener
+                        } else {
+                            alert('Lỗi khi lưu: ' + error.message);
+                        }
+                    });
+                });
+            }
+        }
+
+        // Attach listener khi modal mở (tùy chọn, để an toàn)
+        document.getElementById('accountModal').addEventListener('shown.bs.modal', function () {
+            const editForm = document.getElementById('editForm');
+            if (editForm) attachFormSubmitHandler('editForm');
+        });
+    </script>
+}

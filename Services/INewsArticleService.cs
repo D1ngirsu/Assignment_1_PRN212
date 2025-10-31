@@ -1,4 +1,5 @@
-﻿using System;
+﻿// Updated INewsArticleService.cs (ensuring the tag handling methods are included)
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -23,5 +24,11 @@ namespace Services
         Task DeleteNewsAsync(string newsArticleId);
         Task PublishNewsAsync(string newsArticleId);
         Task UnpublishNewsAsync(string newsArticleId);
+
+        Task<int> GetNextNewsIdAsync();
+
+        // Methods for handling tags via NewsTag junction table (using navigation properties where applicable)
+        Task AddTagsToNewsAsync(string newsArticleId, IEnumerable<int> tagIds);
+        Task RemoveAllTagsFromNewsAsync(string newsArticleId);
     }
 }

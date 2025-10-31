@@ -17,5 +17,7 @@ namespace Repositories
         Task<IEnumerable<NewsArticle>> SearchNewsAsync(string keyword);
         Task<IEnumerable<NewsArticle>> GetLatestNewsAsync(int count);
         Task<IEnumerable<NewsArticle>> GetNewsByDateRangeAsync(DateTime startDate, DateTime endDate);
+        Task AddNewsTagAsync(string newsArticleId, int tagId);
+        Task RemoveAllNewsTagsAsync(string newsArticleId);
     }
 }

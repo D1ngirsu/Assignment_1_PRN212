@@ -1,5 +1,10 @@
-﻿using BusinessObjects.Models;
+﻿
+using BusinessObjects.Models;
 using Repositories;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace Services
 {
@@ -134,6 +139,43 @@ namespace Services
             newsArticle.ModifiedDate = DateTime.Now;
 
             await _newsArticleRepository.UpdateAsync(newsArticle);
+        }
+
+        public async Task<int> GetNextNewsIdAsync()
+        {
+            // Lấy tất cả ID (hoặc optimize: chỉ max nếu repo hỗ trợ)
+            var allNews = await GetAllNewsAsync();
+            var maxId = allNews
+                .Where(n => int.TryParse(n.NewsArticleId, out _))  // Chỉ parse ID số hợp lệ
+                .Max(n => int.TryParse(n.NewsArticleId, out int id) ? id : 0);  // Max int, fallback 0
+
+            return maxId + 1;  // ID tiếp theo
+        }
+
+        // Implementation for adding tags to news (via junction table or navigation)
+        public async Task AddTagsToNewsAsync(string newsArticleId, IEnumerable<int> tagIds)
+        {
+            if (string.IsNullOrWhiteSpace(newsArticleId) || !tagIds?.Any() == true)
+                return;
+
+            var newsArticle = await _newsArticleRepository.GetByIdAsync(newsArticleId);
+            if (newsArticle == null)
+                throw new KeyNotFoundException($"News article with ID {newsArticleId} not found");
+
+            // Use repository method to add to junction (avoids loading full Tags if not needed)
+            foreach (var tagId in tagIds.Distinct())
+            {
+                await _newsArticleRepository.AddNewsTagAsync(newsArticleId, tagId);
+            }
+        }
+
+        // Implementation for removing all tags from news
+        public async Task RemoveAllTagsFromNewsAsync(string newsArticleId)
+        {
+            if (string.IsNullOrWhiteSpace(newsArticleId))
+                return;
+
+            await _newsArticleRepository.RemoveAllNewsTagsAsync(newsArticleId);
         }
     }
 }

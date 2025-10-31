@@ -1,5 +1,4 @@
-﻿// Updated AccountController.cs
-using BusinessObjects.Models;
+﻿using BusinessObjects.Models;
 using FUNewsManagement.Filters;
 using FUNewsManagement.Helpers;
 using FUNewsManagement.Models.ViewModels;
@@ -19,6 +18,8 @@ namespace FUNewsManagement.Controllers
             _authService = authService;
             _accountService = accountService;
         }
+
+        #region Authentication
 
         [HttpGet]
         public IActionResult Login(string? returnUrl = null)
@@ -78,15 +79,19 @@ namespace FUNewsManagement.Controllers
             {
                 AccountName = vm.AccountName,
                 AccountEmail = vm.AccountEmail,
-                AccountPassword = vm.AccountPassword,  // Plain! Let service hash
+                AccountPassword = vm.AccountPassword,
                 AccountRole = vm.AccountRole ?? 2
             };
 
-            await _accountService.CreateAccountAsync(newAccount);  // Service will hash
+            await _accountService.CreateAccountAsync(newAccount);
 
             TempData["SuccessMessage"] = "Đăng ký tài khoản thành công!";
             return RedirectToAction("Login");
         }
+
+        #endregion
+
+        #region Profile Management
 
         [HttpGet]
         [AuthorizeSession]
@@ -104,7 +109,6 @@ namespace FUNewsManagement.Controllers
                 AccountId = user.AccountId,
                 AccountName = user.AccountName,
                 AccountEmail = user.AccountEmail
-                // No password
             };
 
             return View(vm);
@@ -177,20 +181,26 @@ namespace FUNewsManagement.Controllers
             return RedirectToAction(nameof(ChangePassword));
         }
 
+        #endregion
+
+        #region Account Management (Admin Only)
+
         [HttpGet]
         [AuthorizeSession]
         public async Task<IActionResult> ManageAccounts(string? keyword = null)
         {
             if (!IsAdmin)
             {
-                TempData["ErrorMessage"] = "You don't have permission to manage accounts.";
+                TempData["ErrorMessage"] = "Bạn không có quyền quản lý tài khoản.";
                 return RedirectToAction("AccessDenied");
             }
 
             var accounts = await _accountService.GetAllAccountsAsync();
             if (!string.IsNullOrWhiteSpace(keyword))
             {
-                accounts = accounts.Where(a => a.AccountName.Contains(keyword) || a.AccountEmail.Contains(keyword));
+                accounts = accounts.Where(a =>
+                    a.AccountName.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                    a.AccountEmail.Contains(keyword, StringComparison.OrdinalIgnoreCase));
             }
 
             var vm = new AccountListViewModel
@@ -204,11 +214,73 @@ namespace FUNewsManagement.Controllers
 
         [HttpGet]
         [AuthorizeSession]
+        public IActionResult CreateUser()
+        {
+            if (!IsAdmin)
+            {
+                TempData["ErrorMessage"] = "Bạn không có quyền tạo tài khoản.";
+                return RedirectToAction("AccessDenied");
+            }
+
+            var vm = new AccountFormViewModel
+            {
+                AccountRole = 2 // Default Lecturer
+            };
+
+            return PartialView("CreateUser", vm);
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        [AuthorizeSession]
+        public async Task<IActionResult> CreateUser(AccountFormViewModel vm)
+        {
+            if (!IsAdmin)
+            {
+                TempData["ErrorMessage"] = "Bạn không có quyền tạo tài khoản.";
+                return RedirectToAction("AccessDenied");
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return PartialView("CreateUser", vm);
+            }
+
+            try
+            {
+                // Check if email already exists
+                if (await _accountService.EmailExistsAsync(vm.AccountEmail))
+                {
+                    ModelState.AddModelError("AccountEmail", "Email đã được sử dụng.");
+                    return PartialView("CreateUser", vm);
+                }
+
+                var newAccount = new SystemAccount
+                {
+                    AccountName = vm.AccountName,
+                    AccountEmail = vm.AccountEmail,
+                    AccountPassword = PasswordHelper.HashPassword(vm.AccountPassword),
+                    AccountRole = vm.AccountRole ?? 2
+                };
+
+                await _accountService.CreateAccountAsync(newAccount);
+                TempData["SuccessMessage"] = "Tạo tài khoản thành công!";
+                return RedirectToAction(nameof(ManageAccounts));
+            }
+            catch (Exception ex)
+            {
+                ModelState.AddModelError("", $"Lỗi khi tạo tài khoản: {ex.Message}");
+                return PartialView("CreateUser", vm);
+            }
+        }
+
+        [HttpGet]
+        [AuthorizeSession]
         public async Task<IActionResult> EditUser(short id)
         {
             if (!IsAdmin)
             {
-                TempData["ErrorMessage"] = "You don't have permission to edit user accounts.";
+                TempData["ErrorMessage"] = "Bạn không có quyền chỉnh sửa tài khoản.";
                 return RedirectToAction("AccessDenied");
             }
 
@@ -225,10 +297,9 @@ namespace FUNewsManagement.Controllers
                 AccountName = account.AccountName,
                 AccountEmail = account.AccountEmail,
                 AccountRole = account.AccountRole
-                // No password for edit
             };
 
-            return View(vm);
+            return PartialView("EditUser", vm);
         }
 
         [HttpPost]
@@ -238,37 +309,102 @@ namespace FUNewsManagement.Controllers
         {
             if (!IsAdmin)
             {
-                TempData["ErrorMessage"] = "You don't have permission to edit user accounts.";
-                return RedirectToAction("AccessDenied");
+                return Json(new { success = false, message = "Bạn không có quyền chỉnh sửa tài khoản." });
             }
 
             if (id != vm.AccountId)
-                return NotFound();
+                return Json(new { success = false, message = "ID không hợp lệ." });
+
+            // Remove password validation for edit
+            ModelState.Remove("AccountPassword");
+
+            if (!ModelState.IsValid)
+            {
+                // Trả JSON với validation errors
+                var errors = ModelState
+                    .Where(x => x.Value.Errors.Count > 0)
+                    .ToDictionary(
+                        kvp => kvp.Key,
+                        kvp => kvp.Value.Errors.Select(e => e.ErrorMessage).FirstOrDefault()
+                    );
+                return Json(new { success = false, message = "Validation lỗi", errors = errors });
+            }
 
             try
             {
-                if (ModelState.IsValid)
+                var account = await _accountService.GetAccountByIdAsync(id);
+                if (account == null)
+                    return Json(new { success = false, message = "Không tìm thấy tài khoản." });
+
+                // Check email duplicate
+                if (account.AccountEmail != vm.AccountEmail &&
+                    await _accountService.EmailExistsAsync(vm.AccountEmail))
                 {
-                    var account = await _accountService.GetAccountByIdAsync(id);
-                    if (account == null)
-                        return NotFound();
-
-                    account.AccountName = vm.AccountName;
-                    account.AccountEmail = vm.AccountEmail;
-                    account.AccountRole = vm.AccountRole;
-
-                    await _accountService.UpdateAccountAsync(account);
-                    TempData["SuccessMessage"] = "User account updated successfully!";
-                    return RedirectToAction(nameof(ManageAccounts));
+                    ModelState.AddModelError("AccountEmail", "Email đã được sử dụng.");
+                    return Json(new { success = false, message = "Email đã được sử dụng.", field = "AccountEmail" });
                 }
+
+                account.AccountName = vm.AccountName;
+                account.AccountEmail = vm.AccountEmail;
+                account.AccountRole = vm.AccountRole;
+
+                await _accountService.UpdateAccountAsync(account);
+
+                // Update session if editing own account
+                if (CurrentUserId == id)
+                {
+                    HttpContext.Session.SetCurrentUser(account);
+                }
+
+                return Json(new { success = true, message = "Cập nhật tài khoản thành công!" });
             }
             catch (Exception ex)
             {
-                ModelState.AddModelError("", ex.Message);
+                // Log exception (nếu có logger, dùng ILogger)
+                Console.WriteLine($"EditUser error: {ex.Message}"); // Tạm thời
+                return Json(new { success = false, message = $"Lỗi khi cập nhật: {ex.Message}" });
+            }
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        [AuthorizeSession]
+        public async Task<IActionResult> DeleteUser(short id)
+        {
+            if (!IsAdmin)
+            {
+                TempData["ErrorMessage"] = "Bạn không có quyền xóa tài khoản.";
+                return RedirectToAction("AccessDenied");
             }
 
-            return View(vm);
+            try
+            {
+                // Prevent deleting own account
+                if (CurrentUserId == id)
+                {
+                    TempData["ErrorMessage"] = "Bạn không thể xóa tài khoản của chính mình!";
+                    return RedirectToAction(nameof(ManageAccounts));
+                }
+
+                var account = await _accountService.GetAccountByIdAsync(id);
+                if (account == null)
+                {
+                    TempData["ErrorMessage"] = "Không tìm thấy tài khoản.";
+                    return RedirectToAction(nameof(ManageAccounts));
+                }
+
+                await _accountService.DeleteAccountAsync(id);
+                TempData["SuccessMessage"] = $"Đã xóa tài khoản '{account.AccountName}' thành công!";
+            }
+            catch (Exception ex)
+            {
+                TempData["ErrorMessage"] = $"Lỗi khi xóa tài khoản: {ex.Message}";
+            }
+
+            return RedirectToAction(nameof(ManageAccounts));
         }
+
+        #endregion
 
         [HttpGet]
         public IActionResult AccessDenied() => View();

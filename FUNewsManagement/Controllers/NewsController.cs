@@ -1,10 +1,15 @@
-﻿// Updated NewsController.cs
+﻿// Updated NewsController.cs (adjusted to use List<string> for SelectedTagIds, and integrate validation messages)
 using BusinessObjects.Models;
 using FUNewsManagement.Filters;
 using FUNewsManagement.Models.ViewModels;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Rendering;
 using Services;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace FUNewsManagement.Controllers
 {
@@ -24,24 +29,43 @@ namespace FUNewsManagement.Controllers
             _tagService = tagService;
         }
 
-        public async Task<IActionResult> Index(string? keyword = null)
+        public async Task<IActionResult> Index(string? keyword = null, int page = 1)
         {
             IEnumerable<NewsArticle> news;
+            bool isAdminOrStaff = HasRole(1) || IsAdmin;
             if (!string.IsNullOrWhiteSpace(keyword))
             {
                 news = await _newsService.SearchNewsAsync(keyword);
             }
             else
             {
-                news = await _newsService.GetActiveNewsAsync();
+                if (isAdminOrStaff)
+                {
+                    news = await _newsService.GetAllNewsAsync();
+                }
+                else
+                {
+                    news = await _newsService.GetActiveNewsAsync();
+                }
             }
 
-            // Load all categories into a dictionary for efficient lookup
+            if (!isAdminOrStaff)
+            {
+                news = news.Where(n => n.NewsStatus == true);
+            }
+
+            int pageSize = 10;
+            var totalItems = news.Count();
+            var pagedNews = news.OrderByDescending(n => n.CreatedDate)
+                                .Skip((page - 1) * pageSize)
+                                .Take(pageSize)
+                                .ToList();
+            int totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
+
             var categories = await _categoryService.GetAllCategoriesAsync();
             var catDict = categories.ToDictionary(c => c.CategoryId, c => c);
 
-            // Populate Category navigation property for each news article
-            foreach (var article in news)
+            foreach (var article in pagedNews)
             {
                 if (article.CategoryId.HasValue && catDict.TryGetValue(article.CategoryId.Value, out var cat))
                 {
@@ -51,15 +75,17 @@ namespace FUNewsManagement.Controllers
 
             var vm = new NewsListViewModel
             {
-                NewsArticles = news.ToList(),
+                NewsArticles = pagedNews,
                 SearchKeyword = keyword,
-                TotalItems = news.Count()
+                CurrentPage = page,
+                PageSize = pageSize,
+                TotalPages = totalPages,
+                TotalItems = totalItems
             };
 
-            // Set ViewBag for modal
-            ViewBag.Categories = categories.Select(c => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
+            ViewBag.Categories = categories.Select(c => new SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
             var tags = await _tagService.GetAllTagsAsync();
-            ViewBag.Tags = tags.Select(t => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = t.TagId.ToString(), Text = t.TagName }).ToList();
+            ViewBag.Tags = tags.Select(t => new SelectListItem { Value = t.TagId.ToString(), Text = t.TagName }).ToList();
 
             return View(vm);
         }
@@ -76,24 +102,6 @@ namespace FUNewsManagement.Controllers
             return View(newsArticle);
         }
 
-        [AuthorizeSession]
-        public async Task<IActionResult> Create()
-        {
-            if (!HasRole(1) && !IsAdmin)
-            {
-                TempData["ErrorMessage"] = "You don't have permission to create news articles.";
-                return RedirectToAction(nameof(Index));
-            }
-
-            var vm = new NewsFormViewModel();
-            vm.Categories = (await _categoryService.GetActiveCategoriesAsync())
-                .Select(c => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
-            vm.Tags = (await _tagService.GetAllTagsAsync())
-                .Select(t => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = t.TagId.ToString(), Text = t.TagName }).ToList();
-
-            return View(vm);
-        }
-
         [HttpPost]
         [ValidateAntiForgeryToken]
         [AuthorizeSession]
@@ -105,131 +113,114 @@ namespace FUNewsManagement.Controllers
                 return RedirectToAction(nameof(Index));
             }
 
-            try
+            if (!ModelState.IsValid)
             {
-                if (ModelState.IsValid)
-                {
-                    var newsArticle = new NewsArticle
-                    {
-                        NewsArticleId = Guid.NewGuid().ToString(), // Assuming ID is string GUID
-                        NewsTitle = vm.NewsTitle,
-                        NewsContent = vm.NewsContent,
-                        CategoryId = vm.CategoryId,
-                        NewsStatus = vm.NewsStatus,
-                        CreatedById = CurrentUserId,
-                        CreatedDate = DateTime.Now
-                        // Tags will be assigned via service or separate method after creation
-                    };
-
-                    await _newsService.CreateNewsAsync(newsArticle);
-
-                    // Assuming a method to assign tags exists in _newsService or _tagService
-                    // e.g., await _tagService.AssignTagsToNewsAsync(newsArticle.NewsArticleId, vm.SelectedTagIds.Select(int.Parse).ToList());
-
-                    TempData["SuccessMessage"] = "News article created successfully!";
-                    return RedirectToAction(nameof(Index));
-                }
-            }
-            catch (Exception ex)
-            {
-                ModelState.AddModelError("", ex.Message);
-            }
-
-            vm.Categories = (await _categoryService.GetActiveCategoriesAsync())
-                .Select(c => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
-            vm.Tags = (await _tagService.GetAllTagsAsync())
-                .Select(t => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = t.TagId.ToString(), Text = t.TagName }).ToList();
-
-            return View(vm);
-        }
-
-        [AuthorizeSession]
-        public async Task<IActionResult> Edit(string id)
-        {
-            if (id == null)
-                return NotFound();
-
-            var newsArticle = await _newsService.GetNewsByIdAsync(id);
-            if (newsArticle == null)
-                return NotFound();
-
-            if (!HasRole(1) && !IsAdmin)
-            {
-                TempData["ErrorMessage"] = "You don't have permission to edit this article.";
+                var errorMessages = ModelState
+                    .Where(x => x.Value.Errors.Count > 0)
+                    .Select(x => $"{x.Key}: {string.Join(", ", x.Value.Errors.Select(e => e.ErrorMessage))}")
+                    .ToList();
+                TempData["ErrorMessage"] = "Validation errors: " + string.Join("; ", errorMessages);
                 return RedirectToAction(nameof(Index));
             }
 
-            // Fix for CS0266 and CS8629 in Edit GET action
-            var vm = new NewsFormViewModel
+            try
             {
-                NewsArticleId = newsArticle.NewsArticleId,
-                NewsTitle = newsArticle.NewsTitle,
-                NewsContent = newsArticle.NewsContent,
-                CategoryId = newsArticle.CategoryId ?? default(short),
-                NewsStatus = newsArticle.NewsStatus ?? false,
-                CreatedDate = newsArticle.CreatedDate,
-                ModifiedDate = newsArticle.ModifiedDate,
-                CreatedByName = newsArticle.CreatedBy?.AccountName, // Assuming navigation
-                SelectedTagIds = newsArticle.Tags?.Select(t => t.TagId.ToString()).ToList() ?? new List<string>()
-            };
+                var nextId = await _newsService.GetNextNewsIdAsync();
+                var newsId = nextId.ToString();
 
-            vm.Categories = (await _categoryService.GetActiveCategoriesAsync())
-                .Select(c => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
-            vm.Tags = (await _tagService.GetAllTagsAsync())
-                .Select(t => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = t.TagId.ToString(), Text = t.TagName }).ToList();
+                var newsArticle = new NewsArticle
+                {
+                    NewsArticleId = newsId,
+                    NewsTitle = vm.NewsTitle,
+                    Headline = vm.Headline,
+                    NewsContent = vm.NewsContent,
+                    CategoryId = vm.CategoryId,
+                    NewsStatus = vm.NewsStatus,
+                    CreatedById = CurrentUserId,
+                    CreatedDate = DateTime.Now
+                };
 
-            return View(vm);
+                await _newsService.CreateNewsAsync(newsArticle);
+
+                // Handle tags: Add to NewsTag junction table
+                if (vm.SelectedTagIds != null && vm.SelectedTagIds.Any())
+                {
+                    var tagIds = vm.SelectedTagIds.Where(id => int.TryParse(id, out _)).Select(int.Parse).ToList();
+                    if (tagIds.Any())
+                    {
+                        await _newsService.AddTagsToNewsAsync(newsId, tagIds);
+                    }
+                }
+
+                TempData["SuccessMessage"] = $"News article created successfully with ID: {newsId}!";
+                return RedirectToAction(nameof(Index));
+            }
+            catch (Exception ex)
+            {
+                TempData["ErrorMessage"] = ex.Message;
+                return RedirectToAction(nameof(Index));
+            }
         }
 
         [HttpPost]
         [ValidateAntiForgeryToken]
         [AuthorizeSession]
-        public async Task<IActionResult> Edit(string id, NewsFormViewModel vm)
+        public async Task<IActionResult> Edit(NewsFormViewModel vm)
         {
-            if (id != vm.NewsArticleId)
-                return NotFound();
-
             if (!HasRole(1) && !IsAdmin)
             {
                 TempData["ErrorMessage"] = "You don't have permission to edit this article.";
                 return RedirectToAction(nameof(Index));
             }
 
+            if (!ModelState.IsValid)
+            {
+                var errorMessages = ModelState
+                    .Where(x => x.Value.Errors.Count > 0)
+                    .Select(x => $"{x.Key}: {string.Join(", ", x.Value.Errors.Select(e => e.ErrorMessage))}")
+                    .ToList();
+                TempData["ErrorMessage"] = "Validation errors: " + string.Join("; ", errorMessages);
+                return RedirectToAction(nameof(Index));
+            }
+
             try
             {
-                var existing = await _newsService.GetNewsByIdAsync(id);
+                var existing = await _newsService.GetNewsByIdAsync(vm.NewsArticleId);
                 if (existing == null)
-                    return NotFound();
-
-                if (ModelState.IsValid)
                 {
-                    existing.NewsTitle = vm.NewsTitle;
-                    existing.NewsContent = vm.NewsContent;
-                    existing.CategoryId = vm.CategoryId;
-                    existing.NewsStatus = vm.NewsStatus;
-                    existing.UpdatedById = CurrentUserId;
-                    existing.ModifiedDate = DateTime.Now;
-
-                    await _newsService.UpdateNewsAsync(existing);
-
-                    // Update tags
-                    // e.g., await _tagService.UpdateTagsForNewsAsync(existing.NewsArticleId, vm.SelectedTagIds.Select(int.Parse).ToList());
-
-                    TempData["SuccessMessage"] = "News article updated successfully!";
+                    TempData["ErrorMessage"] = "News article not found.";
                     return RedirectToAction(nameof(Index));
                 }
+
+                existing.NewsTitle = vm.NewsTitle;
+                existing.Headline = vm.Headline;
+                existing.NewsContent = vm.NewsContent;
+                existing.CategoryId = vm.CategoryId;
+                existing.NewsStatus = vm.NewsStatus;
+                existing.UpdatedById = CurrentUserId;
+                existing.ModifiedDate = DateTime.Now;
+
+                await _newsService.UpdateNewsAsync(existing);
+
+                // Handle tags: Remove old and add new to NewsTag junction table
+                await _newsService.RemoveAllTagsFromNewsAsync(vm.NewsArticleId);
+                if (vm.SelectedTagIds != null && vm.SelectedTagIds.Any())
+                {
+                    var tagIds = vm.SelectedTagIds.Where(id => int.TryParse(id, out _)).Select(int.Parse).ToList();
+                    if (tagIds.Any())
+                    {
+                        await _newsService.AddTagsToNewsAsync(vm.NewsArticleId, tagIds);
+                    }
+                }
+
+                TempData["SuccessMessage"] = "News article updated successfully!";
+                return RedirectToAction(nameof(Index));
             }
             catch (Exception ex)
             {
-                ModelState.AddModelError("", ex.Message);
+                TempData["ErrorMessage"] = ex.Message;
+                return RedirectToAction(nameof(Index));
             }
-
-            vm.Categories = (await _categoryService.GetActiveCategoriesAsync())
-                .Select(c => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
-            vm.Tags = (await _tagService.GetAllTagsAsync())
-                .Select(t => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = t.TagId.ToString(), Text = t.TagName }).ToList();
-
-            return View(vm);
         }
 
         [HttpGet]
@@ -255,6 +246,7 @@ namespace FUNewsManagement.Controllers
                 {
                     success = true,
                     newsArticleId = newsArticle.NewsArticleId,
+                    headline = newsArticle.Headline ?? newsArticle.NewsTitle,
                     newsTitle = newsArticle.NewsTitle,
                     newsContent = newsArticle.NewsContent,
                     categoryId = newsArticle.CategoryId?.ToString() ?? "",
@@ -277,6 +269,8 @@ namespace FUNewsManagement.Controllers
         {
             try
             {
+                // Remove tags before deleting news (cascade or explicit)
+                await _newsService.RemoveAllTagsFromNewsAsync(id);
                 await _newsService.DeleteNewsAsync(id);
                 TempData["SuccessMessage"] = "News article deleted successfully!";
                 return RedirectToAction(nameof(Index));
@@ -296,7 +290,7 @@ namespace FUNewsManagement.Controllers
             if (!HasRole(1) && !IsAdmin)
             {
                 TempData["ErrorMessage"] = "You don't have permission to publish news articles.";
-                return RedirectToAction(nameof(Details), new { id });
+                return RedirectToAction(nameof(Index));
             }
 
             try
@@ -309,7 +303,7 @@ namespace FUNewsManagement.Controllers
                 TempData["ErrorMessage"] = ex.Message;
             }
 
-            return RedirectToAction(nameof(Details), new { id });
+            return RedirectToAction(nameof(Index));
         }
 
         [AuthorizeSession]
@@ -361,19 +355,25 @@ namespace FUNewsManagement.Controllers
             return View(vm);
         }
 
-        public async Task<IActionResult> Search(string keyword)
+        public async Task<IActionResult> Search(string keyword, int page = 1)
         {
             if (string.IsNullOrWhiteSpace(keyword))
                 return RedirectToAction(nameof(Index));
 
             var news = await _newsService.SearchNewsAsync(keyword);
 
-            // Load all categories into a dictionary for efficient lookup
+            int pageSize = 10;
+            var totalItems = news.Count();
+            var pagedNews = news.OrderByDescending(n => n.CreatedDate)
+                                .Skip((page - 1) * pageSize)
+                                .Take(pageSize)
+                                .ToList();
+            int totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
+
             var categories = await _categoryService.GetAllCategoriesAsync();
             var catDict = categories.ToDictionary(c => c.CategoryId, c => c);
 
-            // Populate Category navigation property for each news article
-            foreach (var article in news)
+            foreach (var article in pagedNews)
             {
                 if (article.CategoryId.HasValue && catDict.TryGetValue(article.CategoryId.Value, out var cat))
                 {
@@ -383,15 +383,17 @@ namespace FUNewsManagement.Controllers
 
             var vm = new NewsListViewModel
             {
-                NewsArticles = news.ToList(),
+                NewsArticles = pagedNews,
                 SearchKeyword = keyword,
-                TotalItems = news.Count()
+                CurrentPage = page,
+                PageSize = pageSize,
+                TotalPages = totalPages,
+                TotalItems = totalItems
             };
 
-            // Set ViewBag for modal (consistent with Index)
-            ViewBag.Categories = categories.Select(c => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
+            ViewBag.Categories = categories.Select(c => new SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
             var tags = await _tagService.GetAllTagsAsync();
-            ViewBag.Tags = tags.Select(t => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = t.TagId.ToString(), Text = t.TagName }).ToList();
+            ViewBag.Tags = tags.Select(t => new SelectListItem { Value = t.TagId.ToString(), Text = t.TagName }).ToList();
 
             return View("Index", vm);
         }
