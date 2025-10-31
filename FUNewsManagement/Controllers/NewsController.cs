@@ -22,46 +22,53 @@ namespace FUNewsManagement.Controllers
             _tagService = tagService;
         }
 
-        // GET: News - Public, không cần login
         public async Task<IActionResult> Index()
         {
             var news = await _newsService.GetActiveNewsAsync();
             return View(news);
         }
 
-        // GET: News/Details/5 - Public
         public async Task<IActionResult> Details(string id)
         {
             if (id == null)
                 return NotFound();
 
             var newsArticle = await _newsService.GetNewsByIdAsync(id);
-            if (newsArticle == null)
+            if (newsArticle == null || !newsArticle.IsActive)
                 return NotFound();
 
             return View(newsArticle);
         }
 
-        // GET: News/Create - Phải login
         [AuthorizeSession]
         public async Task<IActionResult> Create()
         {
+            if (!HasRole(1) && !IsAdmin)
+            {
+                TempData["ErrorMessage"] = "You don't have permission to create news articles.";
+                return RedirectToAction(nameof(Index));
+            }
+
             ViewBag.Categories = await _categoryService.GetActiveCategoriesAsync();
             ViewBag.Tags = await _tagService.GetAllTagsAsync();
             return View();
         }
 
-        // POST: News/Create - Phải login
         [HttpPost]
         [ValidateAntiForgeryToken]
         [AuthorizeSession]
         public async Task<IActionResult> Create(NewsArticle newsArticle)
         {
+            if (!HasRole(1) && !IsAdmin)
+            {
+                TempData["ErrorMessage"] = "You don't have permission to create news articles.";
+                return RedirectToAction(nameof(Index));
+            }
+
             try
             {
                 if (ModelState.IsValid)
                 {
-                    // Tự động set CreatedById từ session
                     newsArticle.CreatedById = CurrentUserId;
                     newsArticle.CreatedDate = DateTime.Now;
 
@@ -80,7 +87,6 @@ namespace FUNewsManagement.Controllers
             return View(newsArticle);
         }
 
-        // GET: News/Edit/5 - Phải login VÀ là chính người tạo hoặc Admin
         [AuthorizeSession]
         public async Task<IActionResult> Edit(string id)
         {
@@ -91,8 +97,7 @@ namespace FUNewsManagement.Controllers
             if (newsArticle == null)
                 return NotFound();
 
-            // Kiểm tra quyền: chỉ người tạo hoặc Admin mới được edit
-            if (newsArticle.CreatedById != CurrentUserId && !IsAdmin)
+            if (!HasRole(1) && !IsAdmin)
             {
                 TempData["ErrorMessage"] = "You don't have permission to edit this article.";
                 return RedirectToAction(nameof(Index));
@@ -103,7 +108,6 @@ namespace FUNewsManagement.Controllers
             return View(newsArticle);
         }
 
-        // POST: News/Edit/5 - Phải login VÀ có quyền
         [HttpPost]
         [ValidateAntiForgeryToken]
         [AuthorizeSession]
@@ -112,22 +116,20 @@ namespace FUNewsManagement.Controllers
             if (id != newsArticle.NewsArticleId)
                 return NotFound();
 
+            if (!HasRole(1) && !IsAdmin)
+            {
+                TempData["ErrorMessage"] = "You don't have permission to edit this article.";
+                return RedirectToAction(nameof(Index));
+            }
+
             try
             {
                 var existing = await _newsService.GetNewsByIdAsync(id);
                 if (existing == null)
                     return NotFound();
 
-                // Kiểm tra quyền
-                if (existing.CreatedById != CurrentUserId && !IsAdmin)
-                {
-                    TempData["ErrorMessage"] = "You don't have permission to edit this article.";
-                    return RedirectToAction(nameof(Index));
-                }
-
                 if (ModelState.IsValid)
                 {
-                    // Set UpdatedById
                     newsArticle.UpdatedById = CurrentUserId;
                     newsArticle.ModifiedDate = DateTime.Now;
 
@@ -146,10 +148,9 @@ namespace FUNewsManagement.Controllers
             return View(newsArticle);
         }
 
-        // POST: News/Delete/5 - CHỈ Admin hoặc Staff
         [HttpPost, ActionName("Delete")]
         [ValidateAntiForgeryToken]
-        [AuthorizeRole(1, 2)] // Admin (1) hoặc Staff (2)
+        [AuthorizeRole(1, 3)]
         public async Task<IActionResult> DeleteConfirmed(string id)
         {
             try
@@ -165,12 +166,17 @@ namespace FUNewsManagement.Controllers
             }
         }
 
-        // POST: News/Publish/5 - CHỈ Admin hoặc Staff
         [HttpPost]
         [ValidateAntiForgeryToken]
-        [StaffOnly] // Sử dụng custom attribute
+        [AuthorizeSession]
         public async Task<IActionResult> Publish(string id)
         {
+            if (!HasRole(1) && !IsAdmin)
+            {
+                TempData["ErrorMessage"] = "You don't have permission to publish news articles.";
+                return RedirectToAction(nameof(Details), new { id });
+            }
+
             try
             {
                 await _newsService.PublishNewsAsync(id);
@@ -184,10 +190,15 @@ namespace FUNewsManagement.Controllers
             return RedirectToAction(nameof(Details), new { id });
         }
 
-        // GET: News/MyNews - Tin tức của user hiện tại
         [AuthorizeSession]
         public async Task<IActionResult> MyNews()
         {
+            if (!HasRole(1) && !IsAdmin)
+            {
+                TempData["ErrorMessage"] = "You don't have permission to view your news history.";
+                return RedirectToAction(nameof(Index));
+            }
+
             if (!CurrentUserId.HasValue)
                 return RedirectToAction("Login", "Account");
 
@@ -195,7 +206,27 @@ namespace FUNewsManagement.Controllers
             return View(myNews);
         }
 
-        // Search - Public
+        [AuthorizeSession]
+        public async Task<IActionResult> Report(DateTime? startDate, DateTime? endDate)
+        {
+            if (!IsAdmin)
+            {
+                TempData["ErrorMessage"] = "You don't have permission to access reports.";
+                return RedirectToAction(nameof(Index));
+            }
+
+            if (!startDate.HasValue || !endDate.HasValue)
+            {
+                startDate = DateTime.Now.AddMonths(-1).Date;
+                endDate = DateTime.Now.Date;
+            }
+
+            var newsInPeriod = await _newsService.GetNewsByPeriodAsync(startDate.Value, endDate.Value);
+            ViewBag.StartDate = startDate.Value.ToShortDateString();
+            ViewBag.EndDate = endDate.Value.ToShortDateString();
+            return View(newsInPeriod);
+        }
+
         public async Task<IActionResult> Search(string keyword)
         {
             if (string.IsNullOrWhiteSpace(keyword))

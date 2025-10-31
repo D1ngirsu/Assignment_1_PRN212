@@ -1,16 +1,19 @@
 ﻿using BusinessObjects.Models;
 using Repositories;
 using Services;
+using Microsoft.Extensions.Configuration;
 
 namespace Services
 {
     public class SystemAccountService : ISystemAccountService
     {
         private readonly ISystemAccountRepository _systemAccountRepository;
+        private readonly IConfiguration _configuration;
 
-        public SystemAccountService(ISystemAccountRepository systemAccountRepository)
+        public SystemAccountService(ISystemAccountRepository systemAccountRepository, IConfiguration configuration)
         {
             _systemAccountRepository = systemAccountRepository;
+            _configuration = configuration;
         }
 
         public async Task<IEnumerable<SystemAccount>> GetAllAccountsAsync()
@@ -46,7 +49,6 @@ namespace Services
 
         public async Task<SystemAccount> CreateAccountAsync(SystemAccount account)
         {
-            // Business validation
             if (account == null)
                 throw new ArgumentNullException(nameof(account));
 
@@ -59,19 +61,17 @@ namespace Services
             if (string.IsNullOrWhiteSpace(account.AccountName))
                 throw new ArgumentException("Account name is required");
 
-            // Check if email already exists
             if (await _systemAccountRepository.EmailExistsAsync(account.AccountEmail))
                 throw new InvalidOperationException($"Email {account.AccountEmail} already exists");
 
-            // Set default values
-            account.AccountRole = account.AccountRole ?? 0; // Default role, e.g., user
+            account.AccountPassword = PasswordHelper.HashPassword(account.AccountPassword);
+            account.AccountRole = account.AccountRole ?? UserRoles.Lecturer;
 
             return await _systemAccountRepository.AddAsync(account);
         }
 
         public async Task UpdateAccountAsync(SystemAccount account)
         {
-            // Business validation
             if (account == null)
                 throw new ArgumentNullException(nameof(account));
 
@@ -82,13 +82,18 @@ namespace Services
             if (string.IsNullOrWhiteSpace(account.AccountEmail))
                 throw new ArgumentException("Email is required");
 
-            if (string.IsNullOrWhiteSpace(account.AccountPassword))
-                throw new ArgumentException("Password is required");
-
             if (string.IsNullOrWhiteSpace(account.AccountName))
                 throw new ArgumentException("Account name is required");
 
-            // Check if email changed and exists
+            if (!string.IsNullOrWhiteSpace(account.AccountPassword))
+            {
+                account.AccountPassword = PasswordHelper.HashPassword(account.AccountPassword);
+            }
+            else
+            {
+                account.AccountPassword = existing.AccountPassword;
+            }
+
             if (account.AccountEmail != existing.AccountEmail && await _systemAccountRepository.EmailExistsAsync(account.AccountEmail))
                 throw new InvalidOperationException($"Email {account.AccountEmail} already exists");
 
@@ -101,7 +106,6 @@ namespace Services
             if (account == null)
                 throw new KeyNotFoundException($"Account with ID {accountId} not found");
 
-            // Optionally check if account has news articles
             var accountsWithNews = await _systemAccountRepository.GetAccountsWithNewsArticlesAsync();
             if (accountsWithNews.Any(a => a.AccountId == accountId))
                 throw new InvalidOperationException($"Cannot delete account {accountId} as it has associated news articles");
@@ -126,9 +130,35 @@ namespace Services
             if (account == null)
                 throw new KeyNotFoundException($"Account with ID {accountId} not found");
 
-            account.AccountPassword = newPassword;
-
+            account.AccountPassword = PasswordHelper.HashPassword(newPassword);
             await _systemAccountRepository.UpdateAsync(account);
+        }
+
+        public async Task EnsureDefaultAdminAsync()
+        {
+            var defaultEmail = _configuration["DefaultAdmin:Email"];
+            if (string.IsNullOrEmpty(defaultEmail))
+                return;
+
+            if (await EmailExistsAsync(defaultEmail))
+                return;
+
+            var defaultPass = _configuration["DefaultAdmin:Password"];
+            if (string.IsNullOrEmpty(defaultPass))
+                return;
+
+            var hashedPass = PasswordHelper.HashPassword(defaultPass);
+            var adminRole = _configuration.GetValue<int>("Roles:Admin", UserRoles.Admin);
+
+            var adminAccount = new SystemAccount
+            {
+                AccountName = "System Administrator",
+                AccountEmail = defaultEmail,
+                AccountPassword = hashedPass,
+                AccountRole = adminRole
+            };
+
+            await CreateAccountAsync(adminAccount);
         }
     }
 }

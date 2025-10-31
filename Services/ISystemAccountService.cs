@@ -19,6 +19,6 @@ namespace Services
         Task DeleteAccountAsync(short accountId);
         Task<bool> EmailExistsAsync(string email);
         Task ChangePasswordAsync(short accountId, string newPassword);
+        Task EnsureDefaultAdminAsync();
     }
-
 }

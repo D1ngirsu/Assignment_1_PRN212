@@ -1,12 +1,10 @@
 ﻿using FUNewsManagement.Helpers;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Services;
 
 namespace FUNewsManagement.Filters
 {
-    /// <summary>
-    /// Require user to be logged in
-    /// </summary>
     public class AuthorizeSessionAttribute : ActionFilterAttribute
     {
         public override void OnActionExecuting(ActionExecutingContext context)
@@ -15,21 +13,14 @@ namespace FUNewsManagement.Filters
 
             if (!session.IsLoggedIn())
             {
-                // Redirect to login with return URL
                 var returnUrl = context.HttpContext.Request.Path;
-                context.Result = new RedirectToActionResult(
-                    "Login",
-                    "Account",
-                    new { returnUrl = returnUrl });
+                context.Result = new RedirectToActionResult("Login", "Account", new { returnUrl = returnUrl });
             }
 
             base.OnActionExecuting(context);
         }
     }
 
-    /// <summary>
-    /// Require specific role
-    /// </summary>
     public class AuthorizeRoleAttribute : ActionFilterAttribute
     {
         private readonly int[] _requiredRoles;
@@ -43,18 +34,13 @@ namespace FUNewsManagement.Filters
         {
             var session = context.HttpContext.Session;
 
-            // Check if logged in
             if (!session.IsLoggedIn())
             {
                 var returnUrl = context.HttpContext.Request.Path;
-                context.Result = new RedirectToActionResult(
-                    "Login",
-                    "Account",
-                    new { returnUrl = returnUrl });
+                context.Result = new RedirectToActionResult("Login", "Account", new { returnUrl = returnUrl });
                 return;
             }
 
-            // Check role
             var userRole = session.GetCurrentUserRole();
             if (!userRole.HasValue)
             {
@@ -62,14 +48,12 @@ namespace FUNewsManagement.Filters
                 return;
             }
 
-            // Admin has all permissions
-            if (userRole.Value == 1)
+            if (userRole.Value == UserRoles.Admin)
             {
                 base.OnActionExecuting(context);
                 return;
             }
 
-            // Check if user has required role
             if (!_requiredRoles.Contains(userRole.Value))
             {
                 context.Result = new RedirectToActionResult("AccessDenied", "Account", null);
@@ -80,23 +64,13 @@ namespace FUNewsManagement.Filters
         }
     }
 
-    /// <summary>
-    /// Require Admin role only
-    /// </summary>
     public class AdminOnlyAttribute : AuthorizeRoleAttribute
     {
-        public AdminOnlyAttribute() : base(1)
-        {
-        }
+        public AdminOnlyAttribute() : base(UserRoles.Admin) { }
     }
 
-    /// <summary>
-    /// Require Staff role (Staff + Admin)
-    /// </summary>
     public class StaffOnlyAttribute : AuthorizeRoleAttribute
     {
-        public StaffOnlyAttribute() : base(1, 2)
-        {
-        }
+        public StaffOnlyAttribute() : base(UserRoles.Admin, UserRoles.Staff) { }
     }
 }

@@ -1,232 +1,241 @@
 ﻿using BusinessObjects.Models;
+using FUNewsManagement.Filters;
 using FUNewsManagement.Helpers;
-using FUNewsManagement.Models;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Services;
 
 namespace FUNewsManagement.Controllers
 {
-    public class AccountController : Controller
+    public class AccountController : BaseController
     {
         private readonly IAuthenticationService _authService;
         private readonly ISystemAccountService _accountService;
 
-        public AccountController(
-            IAuthenticationService authService,
-            ISystemAccountService accountService)
+        public AccountController(IAuthenticationService authService, ISystemAccountService accountService)
         {
             _authService = authService;
             _accountService = accountService;
         }
 
-        // GET: Account/Login
+        // LOGIN
         [HttpGet]
         public IActionResult Login(string? returnUrl = null)
         {
-            // Nếu đã login rồi thì redirect về Home
-            if (HttpContext.Session.IsLoggedIn())
-            {
+            if (IsLoggedIn)
                 return RedirectToAction("Index", "Home");
-            }
 
-            ViewData["ReturnUrl"] = returnUrl;
+            ViewBag.ReturnUrl = returnUrl;
             return View();
         }
 
-        // POST: Account/Login
         [HttpPost]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Login(LoginViewModel model, string? returnUrl = null)
+        public async Task<IActionResult> Login(string email, string password, string? returnUrl = null)
         {
-            ViewData["ReturnUrl"] = returnUrl;
-
-            if (!ModelState.IsValid)
+            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
             {
-                return View(model);
+                ViewBag.Error = "Email và mật khẩu không được để trống.";
+                return View();
             }
 
-            try
+            var account = await _authService.AuthenticateAsync(email, password);
+            if (account == null)
             {
-                // Authenticate user
-                var user = await _authService.AuthenticateAsync(model.Email, model.Password);
-
-                if (user == null)
-                {
-                    ModelState.AddModelError("", "Invalid email or password");
-                    return View(model);
-                }
-
-                // Set session
-                HttpContext.Session.SetCurrentUser(user);
-
-                // Log successful login
-                Console.WriteLine($"User {user.AccountEmail} logged in successfully");
-
-                // Redirect
-                if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
-                {
-                    return Redirect(returnUrl);
-                }
-
-                return RedirectToAction("Index", "Home");
+                ViewBag.Error = "Email hoặc mật khẩu không đúng.";
+                return View();
             }
-            catch (Exception ex)
+
+            HttpContext.Session.SetCurrentUser(account);
+
+            if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
+                return Redirect(returnUrl);
+
+            return account.AccountRole switch
             {
-                ModelState.AddModelError("", $"Login failed: {ex.Message}");
-                return View(model);
-            }
+                3 => RedirectToAction("Index", "Admin"),
+                1 => RedirectToAction("Index", "Staff"),
+                2 => RedirectToAction("Index", "Lecturer"),
+                _ => RedirectToAction("Index", "Home")
+            };
         }
 
-        // GET: Account/Register
-        [HttpGet]
-        public IActionResult Register()
-        {
-            // Nếu đã login rồi thì redirect về Home
-            if (HttpContext.Session.IsLoggedIn())
-            {
-                return RedirectToAction("Index", "Home");
-            }
-
-            return View();
-        }
-
-        // POST: Account/Register
-        [HttpPost]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Register(RegisterViewModel model)
-        {
-            if (!ModelState.IsValid)
-            {
-                return View(model);
-            }
-
-            try
-            {
-                // Check if email exists
-                if (await _accountService.EmailExistsAsync(model.AccountEmail))
-                {
-                    ModelState.AddModelError("AccountEmail", "Email already exists");
-                    return View(model);
-                }
-
-                // Create new account
-                var account = new SystemAccount
-                {
-                    AccountName = model.AccountName,
-                    AccountEmail = model.AccountEmail,
-                    AccountPassword = model.AccountPassword,
-                    AccountRole = 3 // Default role: Lecturer
-                };
-
-                await _accountService.CreateAccountAsync(account);
-
-                TempData["SuccessMessage"] = "Registration successful! Please login.";
-                return RedirectToAction(nameof(Login));
-            }
-            catch (Exception ex)
-            {
-                ModelState.AddModelError("", $"Registration failed: {ex.Message}");
-                return View(model);
-            }
-        }
-
-        // POST: Account/Logout
-        [HttpPost]
-        [ValidateAntiForgeryToken]
         public IActionResult Logout()
         {
-            // Clear session
             HttpContext.Session.ClearSession();
-
-            TempData["InfoMessage"] = "You have been logged out successfully.";
-            return RedirectToAction(nameof(Login));
+            return RedirectToAction("Login");
         }
 
-        // GET: Account/Profile
+        // REGISTER
         [HttpGet]
-        public IActionResult Profile()
+        public IActionResult Register() => View();
+
+        [HttpPost]
+        public async Task<IActionResult> Register(SystemAccount newAccount)
         {
-            // Check if logged in
-            if (!HttpContext.Session.IsLoggedIn())
+            if (!ModelState.IsValid)
             {
-                return RedirectToAction(nameof(Login));
+                ViewBag.Error = "Dữ liệu không hợp lệ.";
+                return View(newAccount);
             }
 
-            var currentUser = HttpContext.Session.GetCurrentUser();
-            if (currentUser == null)
+            if (await _accountService.EmailExistsAsync(newAccount.AccountEmail))
             {
-                return RedirectToAction(nameof(Login));
+                ViewBag.Error = "Email đã được sử dụng.";
+                return View(newAccount);
             }
 
-            return View(currentUser);
+            newAccount.AccountPassword = PasswordHelper.HashPassword(newAccount.AccountPassword);
+            newAccount.AccountRole ??= 2;
+            await _accountService.CreateAccountAsync(newAccount);
+
+            ViewBag.Success = "Đăng ký tài khoản thành công!";
+            return RedirectToAction("Login");
         }
 
-        // GET: Account/ChangePassword
+        // PROFILE
         [HttpGet]
-        public IActionResult ChangePassword()
+        [AuthorizeSession]
+        public async Task<IActionResult> Profile()
         {
-            // Check if logged in
-            if (!HttpContext.Session.IsLoggedIn())
+            if (!CurrentUserId.HasValue)
+                return RedirectToAction("Login");
+
+            var user = await _accountService.GetAccountByIdAsync(CurrentUserId.Value);
+            if (user == null)
+                return RedirectToAction("Login");
+
+            return View(user);
+        }
+
+        [HttpPost]
+        [AuthorizeSession]
+        public async Task<IActionResult> Profile(SystemAccount updatedAccount)
+        {
+            if (!CurrentUserId.HasValue)
+                return RedirectToAction("Login");
+
+            var existing = await _accountService.GetAccountByIdAsync(CurrentUserId.Value);
+            if (existing == null)
+                return RedirectToAction("Login");
+
+            existing.AccountName = updatedAccount.AccountName;
+            existing.AccountEmail = updatedAccount.AccountEmail;
+
+            await _accountService.UpdateAccountAsync(existing);
+            HttpContext.Session.SetCurrentUser(existing);
+
+            ViewBag.Success = "Cập nhật thông tin thành công.";
+            return View(existing);
+        }
+
+        // CHANGE PASSWORD
+        [HttpGet]
+        [AuthorizeSession]
+        public IActionResult ChangePassword() => View();
+
+        [HttpPost]
+        [AuthorizeSession]
+        public async Task<IActionResult> ChangePassword(string oldPassword, string newPassword, string confirmPassword)
+        {
+            if (!CurrentUserId.HasValue)
+                return RedirectToAction("Login");
+
+            var account = await _accountService.GetAccountByIdAsync(CurrentUserId.Value);
+            if (account == null)
+                return RedirectToAction("Login");
+
+            if (string.IsNullOrWhiteSpace(oldPassword) || string.IsNullOrWhiteSpace(newPassword))
             {
-                return RedirectToAction(nameof(Login));
+                ViewBag.Error = "Vui lòng nhập đầy đủ mật khẩu.";
+                return View();
             }
 
+            if (!PasswordHelper.VerifyPassword(oldPassword, account.AccountPassword))
+            {
+                ViewBag.Error = "Mật khẩu cũ không chính xác.";
+                return View();
+            }
+
+            if (newPassword != confirmPassword)
+            {
+                ViewBag.Error = "Xác nhận mật khẩu mới không trùng khớp.";
+                return View();
+            }
+
+            account.AccountPassword = PasswordHelper.HashPassword(newPassword);
+            await _accountService.UpdateAccountAsync(account);
+
+            ViewBag.Success = "Đổi mật khẩu thành công.";
             return View();
         }
 
-        // POST: Account/ChangePassword
-        [HttpPost]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> ChangePassword(ChangePasswordViewModel model)
+        // ADMIN MANAGE ACCOUNTS
+        [HttpGet]
+        [AuthorizeSession]
+        public async Task<IActionResult> ManageAccounts()
         {
-            if (!HttpContext.Session.IsLoggedIn())
+            if (!IsAdmin)
             {
-                return RedirectToAction(nameof(Login));
+                TempData["ErrorMessage"] = "You don't have permission to manage accounts.";
+                return RedirectToAction("AccessDenied");
             }
 
-            if (!ModelState.IsValid)
+            var accounts = await _accountService.GetAllAccountsAsync();
+            return View(accounts);
+        }
+
+        [HttpGet]
+        [AuthorizeSession]
+        public async Task<IActionResult> EditUser(short id)
+        {
+            if (!IsAdmin)
             {
-                return View(model);
+                TempData["ErrorMessage"] = "You don't have permission to edit user accounts.";
+                return RedirectToAction("AccessDenied");
             }
+
+            if (id <= 0)
+                return NotFound();
+
+            var account = await _accountService.GetAccountByIdAsync(id);
+            if (account == null)
+                return NotFound();
+
+            return View(account);
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        [AuthorizeSession]
+        public async Task<IActionResult> EditUser(short id, SystemAccount account)
+        {
+            if (!IsAdmin)
+            {
+                TempData["ErrorMessage"] = "You don't have permission to edit user accounts.";
+                return RedirectToAction("AccessDenied");
+            }
+
+            if (id != account.AccountId)
+                return NotFound();
 
             try
             {
-                var userId = HttpContext.Session.GetCurrentUserId();
-                if (!userId.HasValue)
+                if (ModelState.IsValid)
                 {
-                    return RedirectToAction(nameof(Login));
+                    await _accountService.UpdateAccountAsync(account);
+                    TempData["SuccessMessage"] = "User account updated successfully!";
+                    return RedirectToAction(nameof(ManageAccounts));
                 }
-
-                // Verify current password
-                var currentUser = await _accountService.GetAccountByIdAsync(userId.Value);
-                if (currentUser == null || currentUser.AccountPassword != model.CurrentPassword)
-                {
-                    ModelState.AddModelError("CurrentPassword", "Current password is incorrect");
-                    return View(model);
-                }
-
-                // Change password
-                await _accountService.ChangePasswordAsync(userId.Value, model.NewPassword);
-
-                // Update session
-                currentUser.AccountPassword = model.NewPassword;
-                HttpContext.Session.SetCurrentUser(currentUser);
-
-                TempData["SuccessMessage"] = "Password changed successfully!";
-                return RedirectToAction(nameof(Profile));
             }
             catch (Exception ex)
             {
-                ModelState.AddModelError("", $"Failed to change password: {ex.Message}");
-                return View(model);
+                ModelState.AddModelError("", ex.Message);
             }
+
+            return View(account);
         }
 
-        // GET: Account/AccessDenied
         [HttpGet]
-        public IActionResult AccessDenied()
-        {
-            return View();
-        }
+        public IActionResult AccessDenied() => View();
     }
 }

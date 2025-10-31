@@ -1,6 +1,5 @@
 ﻿using BusinessObjects.Models;
 using Services;
-using BCrypt.Net;
 
 namespace Services
 {
@@ -37,7 +36,7 @@ namespace Services
             }
 
             // Verify password
-            if (!VerifyPassword(password, account.AccountPassword))
+            if (!PasswordHelper.VerifyPassword(password, account.AccountPassword))
             {
                 return null;
             }
@@ -75,34 +74,7 @@ namespace Services
             }
 
             // Model SystemAccount không có field AccountStatus, nên mặc định tất cả account hợp lệ có thể login
-            // Nếu sau này thêm status, có thể cập nhật logic ở đây (ví dụ: return account.AccountStatus == 1;)
             return true;
-        }
-
-        /// <summary>
-        /// Hash password (sử dụng BCrypt)
-        /// </summary>
-        public string HashPassword(string password)
-        {
-            if (string.IsNullOrEmpty(password))
-            {
-                throw new ArgumentException("Password cannot be null or empty", nameof(password));
-            }
-
-            return BCrypt.Net.BCrypt.HashPassword(password);
-        }
-
-        /// <summary>
-        /// Verify password hash
-        /// </summary>
-        public bool VerifyPassword(string password, string hashedPassword)
-        {
-            if (string.IsNullOrEmpty(password) || string.IsNullOrEmpty(hashedPassword))
-            {
-                return false;
-            }
-
-            return BCrypt.Net.BCrypt.Verify(password, hashedPassword);
         }
     }
 }
