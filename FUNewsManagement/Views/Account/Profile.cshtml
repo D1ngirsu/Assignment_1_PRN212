@@ -1,0 +1,25 @@
+﻿@model FUNewsManagement.Models.ViewModels.ProfileViewModel
+@{
+    ViewData["Title"] = "Profile";
+}
+
+<h1>Profile</h1>
+@if (!string.IsNullOrEmpty(ViewBag.Success))
+{
+    <div class="alert alert-success">@ViewBag.Success</div>
+}
+<form asp-action="Profile" method="post">
+    @Html.AntiForgeryToken()
+    <div class="mb-3">
+        <label asp-for="AccountName"></label>
+        <input asp-for="AccountName" class="form-control" />
+    </div>
+    <div class="mb-3">
+        <label asp-for="AccountEmail"></label>
+        <input asp-for="AccountEmail" class="form-control" />
+    </div>
+    <button type="submit" class="btn btn-primary">Update</button>
+</form>
+
+<h2>Change Password</h2>
+<a asp-action="ChangePassword" class="btn btn-link">Change Password</a>

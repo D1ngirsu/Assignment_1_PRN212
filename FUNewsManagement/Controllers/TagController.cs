@@ -1,5 +1,7 @@
-﻿using BusinessObjects.Models;
+﻿// Updated TagController.cs
+using BusinessObjects.Models;
 using FUNewsManagement.Filters;
+using FUNewsManagement.Models.ViewModels;
 using Microsoft.AspNetCore.Mvc;
 using Services;
 using System.Linq;
@@ -15,14 +17,23 @@ namespace FUNewsManagement.Controllers
             _tagService = tagService;
         }
 
-        // GET: Tag - Public, không cần login
-        public async Task<IActionResult> Index()
+        public async Task<IActionResult> Index(string? keyword = null)
         {
             var tags = await _tagService.GetAllTagsAsync();
-            return View(tags);
+            if (!string.IsNullOrWhiteSpace(keyword))
+            {
+                tags = tags.Where(t => t.TagName.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+            }
+
+            var vm = new TagListViewModel
+            {
+                Tags = tags.ToList(),
+                SearchKeyword = keyword
+            };
+
+            return View(vm);
         }
 
-        // GET: Tag/Details/5 - Public
         public async Task<IActionResult> Details(int id)
         {
             if (id <= 0)
@@ -32,7 +43,6 @@ namespace FUNewsManagement.Controllers
             var tag = tagsWithNews.FirstOrDefault(t => t.TagId == id);
             if (tag == null)
             {
-                // Fallback: get tag without news if not found in tags with news
                 tag = await _tagService.GetTagByIdAsync(id);
                 if (tag == null)
                     return NotFound();
@@ -41,7 +51,6 @@ namespace FUNewsManagement.Controllers
             return View(tag);
         }
 
-        // GET: Tag/Create - Phải login và là Admin
         [AuthorizeSession]
         public async Task<IActionResult> Create()
         {
@@ -51,14 +60,14 @@ namespace FUNewsManagement.Controllers
                 return RedirectToAction(nameof(Index));
             }
 
-            return View();
+            var vm = new TagFormViewModel();
+            return View(vm);
         }
 
-        // POST: Tag/Create - Phải login và là Admin
         [HttpPost]
         [ValidateAntiForgeryToken]
         [AuthorizeSession]
-        public async Task<IActionResult> Create(Tag tag)
+        public async Task<IActionResult> Create(TagFormViewModel vm)
         {
             if (!IsAdmin)
             {
@@ -70,6 +79,12 @@ namespace FUNewsManagement.Controllers
             {
                 if (ModelState.IsValid)
                 {
+                    var tag = new Tag
+                    {
+                        TagName = vm.TagName,
+                        Note = vm.TagDescription
+                    };
+
                     await _tagService.CreateTagAsync(tag);
                     TempData["SuccessMessage"] = "Tag created successfully!";
                     return RedirectToAction(nameof(Index));
@@ -80,10 +95,9 @@ namespace FUNewsManagement.Controllers
                 ModelState.AddModelError("", ex.Message);
             }
 
-            return View(tag);
+            return View(vm);
         }
 
-        // GET: Tag/Edit/5 - Phải login và là Admin
         [AuthorizeSession]
         public async Task<IActionResult> Edit(int id)
         {
@@ -100,16 +114,22 @@ namespace FUNewsManagement.Controllers
                 return RedirectToAction(nameof(Index));
             }
 
-            return View(tag);
+            var vm = new TagFormViewModel
+            {
+                TagId = tag.TagId,
+                TagName = tag.TagName,
+                TagDescription = tag.Note
+            };
+
+            return View(vm);
         }
 
-        // POST: Tag/Edit/5 - Phải login và là Admin
         [HttpPost]
         [ValidateAntiForgeryToken]
         [AuthorizeSession]
-        public async Task<IActionResult> Edit(int id, Tag tag)
+        public async Task<IActionResult> Edit(int id, TagFormViewModel vm)
         {
-            if (id != tag.TagId)
+            if (id != vm.TagId)
                 return NotFound();
 
             if (!IsAdmin)
@@ -122,6 +142,13 @@ namespace FUNewsManagement.Controllers
             {
                 if (ModelState.IsValid)
                 {
+                    var tag = await _tagService.GetTagByIdAsync(id);
+                    if (tag == null)
+                        return NotFound();
+
+                    tag.TagName = vm.TagName;
+                    tag.Note = vm.TagDescription;
+
                     await _tagService.UpdateTagAsync(tag);
                     TempData["SuccessMessage"] = "Tag updated successfully!";
                     return RedirectToAction(nameof(Index));
@@ -132,10 +159,9 @@ namespace FUNewsManagement.Controllers
                 ModelState.AddModelError("", ex.Message);
             }
 
-            return View(tag);
+            return View(vm);
         }
 
-        // POST: Tag/Delete/5 - CHỈ Admin
         [HttpPost, ActionName("Delete")]
         [ValidateAntiForgeryToken]
         [AuthorizeSession]

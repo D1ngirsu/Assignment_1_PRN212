@@ -1,0 +1,45 @@
+﻿@model FUNewsManagement.Models.ViewModels.NewsReportViewModel
+@{
+    ViewData["Title"] = "News Report";
+}
+
+<h1>News Report (@Model.StartDate.ToShortDateString() - @Model.EndDate.ToShortDateString())</h1>
+
+<!-- Date Filter Form -->
+<form asp-action="Report" method="post" class="mb-3">
+    <div class="row">
+        <div class="col-md-3">
+            <label>Start Date</label>
+            <input type="date" name="startDate" class="form-control" value="@Model.StartDate.ToString("yyyy-MM-dd")" />
+        </div>
+        <div class="col-md-3">
+            <label>End Date</label>
+            <input type="date" name="endDate" class="form-control" value="@Model.EndDate.ToString("yyyy-MM-dd")" />
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary mt-4">Generate</button>
+        </div>
+    </div>
+</form>
+
+<p>Total News: @Model.TotalNews</p>
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Created Date</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var item in Model.NewsInPeriod.OrderByDescending(n => n.CreatedDate))
+        {
+            <tr>
+                <td>@item.NewsTitle</td>
+                <td>@item.CreatedDate</td>
+                <td>@(item.NewsStatus == true ? "Active" : "Inactive")</td>
+            </tr>
+        }
+    </tbody>
+</table>

@@ -1,0 +1,98 @@
+﻿@model FUNewsManagement.Models.ViewModels.CategoryListViewModel
+@using FUNewsManagement.Helpers  @* Import SessionManager *@
+@using Services  @* Import UserRoles từ Services namespace *@
+@{
+    ViewData["Title"] = "Categories";
+    var session = Context.Session;  // Lấy session từ HttpContext
+    var userRole = session.GetCurrentUserRole();  // Lấy role từ session (int?)
+    bool canManage = session.IsLoggedIn() &&
+                     (userRole == UserRoles.Staff || userRole == UserRoles.Admin);  // Staff=1, Admin=3
+}
+
+<h1>Categories</h1>
+
+<!-- Search -->
+<form asp-action="Index" method="get" class="mb-3">
+    <input type="text" name="keyword" placeholder="Search..." value="@Model.SearchKeyword" class="form-control d-inline w-25" />
+    <button type="submit" class="btn btn-primary">Search</button>
+    @if (canManage)
+    {
+        <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#categoryModal" onclick="loadCreateForm('Category')">Create</button>
+    }
+</form>
+
+<table class="table">
+    <thead><tr><th>Name</th><th>Description</th><th>Status</th>@if(canManage){
+    <th>Actions</th>
+        }
+</tr></thead>
+    <tbody>
+        @foreach (var item in Model.Categories.Where(c => c.IsActive == true)) // Active only for public
+        {
+            <tr>
+                <td><a asp-action="Details" asp-route-id="@item.CategoryId">@item.CategoryName</a></td>
+                <td>@item.CategoryDesciption</td>
+                <td>@(item.IsActive == true ? "Active" : "Inactive")</td>
+                @if (canManage)
+                {
+                    <td>
+                        <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#categoryModal" onclick="loadEditForm('@item.CategoryId', 'Category')">Edit</button>
+                        <form asp-action="Delete" method="post" style="display:inline;" onsubmit="return confirm('Delete only if no news associated?')">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="id" value="@item.CategoryId" />
+                            <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                        </form>
+                    </td>
+                }
+            </tr>
+        }
+    </tbody>
+</table>
+
+@if (canManage)
+{
+    <!-- Modal similar to News, with fields for Name, Description, ParentCategory, Status -->
+    <div class="modal fade" id="categoryModal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form id="categoryForm" asp-action="Create" method="post">
+                    @Html.AntiForgeryToken()
+                    <div class="modal-body">
+                        <input type="hidden" name="CategoryId" id="catId" />
+                        <div class="mb-3"><label>Name</label><input name="CategoryName" class="form-control" required /></div>
+                        <div class="mb-3"><label>Description</label><textarea name="CategoryDescription" class="form-control"></textarea></div>
+                        <div class="mb-3"><label>Parent</label><select name="ParentCategoryId" class="form-select">@foreach(var p in ViewBag.ParentCategories){
+                        <option value="@p.Value">@p.Text</option>
+                    }
+</select></div>
+                    <div class="mb-3 form-check"><input type="checkbox" name="CategoryStatus" checked class="form-check-input" /><label>Active</label></div>
+                </div>
+                <div class="modal-footer"><button type="submit" class="btn btn-primary">Save</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+}
+
+@section Scripts {
+    <!-- Similar JS for loadCreateForm, loadEditForm with AJAX -->
+    <script>
+        function loadCreateForm() {
+            document.getElementById('newsForm').action = '@Url.Action("Create")';
+            document.getElementById('newsId').value = '';
+            // Clear form fields
+            document.querySelector('#newsForm').reset();
+        }
+        function loadEditForm(id) {
+            // AJAX to fetch data and populate form
+            fetch('/News/Edit/' + id)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('newsId').value = data.newsArticleId;
+                    // Populate fields...
+                    document.getElementById('newsForm').action = '@Url.Action("Edit")';
+                });
+            document.getElementById('newsModal').querySelector('.modal-title').textContent = 'Edit News';
+        }
+    </script>
+}

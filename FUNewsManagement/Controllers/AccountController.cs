@@ -1,6 +1,8 @@
-﻿using BusinessObjects.Models;
+﻿// Updated AccountController.cs
+using BusinessObjects.Models;
 using FUNewsManagement.Filters;
 using FUNewsManagement.Helpers;
+using FUNewsManagement.Models.ViewModels;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Services;
@@ -18,45 +20,38 @@ namespace FUNewsManagement.Controllers
             _accountService = accountService;
         }
 
-        // LOGIN
         [HttpGet]
         public IActionResult Login(string? returnUrl = null)
         {
             if (IsLoggedIn)
                 return RedirectToAction("Index", "Home");
 
-            ViewBag.ReturnUrl = returnUrl;
-            return View();
+            var vm = new LoginViewModel { ReturnUrl = returnUrl };
+            return View(vm);
         }
 
         [HttpPost]
-        public async Task<IActionResult> Login(string email, string password, string? returnUrl = null)
+        public async Task<IActionResult> Login(LoginViewModel vm)
         {
-            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+            if (string.IsNullOrWhiteSpace(vm.Email) || string.IsNullOrWhiteSpace(vm.Password))
             {
-                ViewBag.Error = "Email và mật khẩu không được để trống.";
-                return View();
+                ModelState.AddModelError("", "Email và mật khẩu không được để trống.");
+                return View(vm);
             }
 
-            var account = await _authService.AuthenticateAsync(email, password);
+            var account = await _authService.AuthenticateAsync(vm.Email, vm.Password);
             if (account == null)
             {
-                ViewBag.Error = "Email hoặc mật khẩu không đúng.";
-                return View();
+                ModelState.AddModelError("", "Email hoặc mật khẩu không đúng.");
+                return View(vm);
             }
 
             HttpContext.Session.SetCurrentUser(account);
 
-            if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
-                return Redirect(returnUrl);
+            if (!string.IsNullOrEmpty(vm.ReturnUrl) && Url.IsLocalUrl(vm.ReturnUrl))
+                return Redirect(vm.ReturnUrl);
 
-            return account.AccountRole switch
-            {
-                3 => RedirectToAction("Index", "Admin"),
-                1 => RedirectToAction("Index", "Staff"),
-                2 => RedirectToAction("Index", "Lecturer"),
-                _ => RedirectToAction("Index", "Home")
-            };
+            return RedirectToAction("Index", "News");
         }
 
         public IActionResult Logout()
@@ -65,34 +60,34 @@ namespace FUNewsManagement.Controllers
             return RedirectToAction("Login");
         }
 
-        // REGISTER
         [HttpGet]
-        public IActionResult Register() => View();
+        public IActionResult Register() => View(new RegisterViewModel());
 
         [HttpPost]
-        public async Task<IActionResult> Register(SystemAccount newAccount)
+        public async Task<IActionResult> Register(RegisterViewModel vm)
         {
-            if (!ModelState.IsValid)
+            if (!ModelState.IsValid) return View(vm);
+
+            if (await _accountService.EmailExistsAsync(vm.AccountEmail))
             {
-                ViewBag.Error = "Dữ liệu không hợp lệ.";
-                return View(newAccount);
+                ModelState.AddModelError("", "Email đã được sử dụng.");
+                return View(vm);
             }
 
-            if (await _accountService.EmailExistsAsync(newAccount.AccountEmail))
+            var newAccount = new SystemAccount
             {
-                ViewBag.Error = "Email đã được sử dụng.";
-                return View(newAccount);
-            }
+                AccountName = vm.AccountName,
+                AccountEmail = vm.AccountEmail,
+                AccountPassword = vm.AccountPassword,  // Plain! Let service hash
+                AccountRole = vm.AccountRole ?? 2
+            };
 
-            newAccount.AccountPassword = PasswordHelper.HashPassword(newAccount.AccountPassword);
-            newAccount.AccountRole ??= 2;
-            await _accountService.CreateAccountAsync(newAccount);
+            await _accountService.CreateAccountAsync(newAccount);  // Service will hash
 
-            ViewBag.Success = "Đăng ký tài khoản thành công!";
+            TempData["SuccessMessage"] = "Đăng ký tài khoản thành công!";
             return RedirectToAction("Login");
         }
 
-        // PROFILE
         [HttpGet]
         [AuthorizeSession]
         public async Task<IActionResult> Profile()
@@ -104,12 +99,20 @@ namespace FUNewsManagement.Controllers
             if (user == null)
                 return RedirectToAction("Login");
 
-            return View(user);
+            var vm = new ProfileViewModel
+            {
+                AccountId = user.AccountId,
+                AccountName = user.AccountName,
+                AccountEmail = user.AccountEmail
+                // No password
+            };
+
+            return View(vm);
         }
 
         [HttpPost]
         [AuthorizeSession]
-        public async Task<IActionResult> Profile(SystemAccount updatedAccount)
+        public async Task<IActionResult> Profile(ProfileViewModel vm)
         {
             if (!CurrentUserId.HasValue)
                 return RedirectToAction("Login");
@@ -118,24 +121,26 @@ namespace FUNewsManagement.Controllers
             if (existing == null)
                 return RedirectToAction("Login");
 
-            existing.AccountName = updatedAccount.AccountName;
-            existing.AccountEmail = updatedAccount.AccountEmail;
+            if (!ModelState.IsValid)
+                return View(vm);
+
+            existing.AccountName = vm.AccountName;
+            existing.AccountEmail = vm.AccountEmail;
 
             await _accountService.UpdateAccountAsync(existing);
             HttpContext.Session.SetCurrentUser(existing);
 
-            ViewBag.Success = "Cập nhật thông tin thành công.";
-            return View(existing);
+            TempData["SuccessMessage"] = "Cập nhật thông tin thành công.";
+            return RedirectToAction(nameof(Profile));
         }
 
-        // CHANGE PASSWORD
         [HttpGet]
         [AuthorizeSession]
-        public IActionResult ChangePassword() => View();
+        public IActionResult ChangePassword() => View(new ChangePasswordViewModel());
 
         [HttpPost]
         [AuthorizeSession]
-        public async Task<IActionResult> ChangePassword(string oldPassword, string newPassword, string confirmPassword)
+        public async Task<IActionResult> ChangePassword(ChangePasswordViewModel vm)
         {
             if (!CurrentUserId.HasValue)
                 return RedirectToAction("Login");
@@ -144,35 +149,37 @@ namespace FUNewsManagement.Controllers
             if (account == null)
                 return RedirectToAction("Login");
 
-            if (string.IsNullOrWhiteSpace(oldPassword) || string.IsNullOrWhiteSpace(newPassword))
+            if (!ModelState.IsValid)
+                return View(vm);
+
+            if (string.IsNullOrWhiteSpace(vm.OldPassword) || string.IsNullOrWhiteSpace(vm.NewPassword))
             {
-                ViewBag.Error = "Vui lòng nhập đầy đủ mật khẩu.";
-                return View();
+                ModelState.AddModelError("", "Vui lòng nhập đầy đủ mật khẩu.");
+                return View(vm);
             }
 
-            if (!PasswordHelper.VerifyPassword(oldPassword, account.AccountPassword))
+            if (!PasswordHelper.VerifyPassword(vm.OldPassword, account.AccountPassword))
             {
-                ViewBag.Error = "Mật khẩu cũ không chính xác.";
-                return View();
+                ModelState.AddModelError("", "Mật khẩu cũ không chính xác.");
+                return View(vm);
             }
 
-            if (newPassword != confirmPassword)
+            if (vm.NewPassword != vm.ConfirmPassword)
             {
-                ViewBag.Error = "Xác nhận mật khẩu mới không trùng khớp.";
-                return View();
+                ModelState.AddModelError("", "Xác nhận mật khẩu mới không trùng khớp.");
+                return View(vm);
             }
 
-            account.AccountPassword = PasswordHelper.HashPassword(newPassword);
+            account.AccountPassword = PasswordHelper.HashPassword(vm.NewPassword);
             await _accountService.UpdateAccountAsync(account);
 
-            ViewBag.Success = "Đổi mật khẩu thành công.";
-            return View();
+            TempData["SuccessMessage"] = "Đổi mật khẩu thành công.";
+            return RedirectToAction(nameof(ChangePassword));
         }
 
-        // ADMIN MANAGE ACCOUNTS
         [HttpGet]
         [AuthorizeSession]
-        public async Task<IActionResult> ManageAccounts()
+        public async Task<IActionResult> ManageAccounts(string? keyword = null)
         {
             if (!IsAdmin)
             {
@@ -181,7 +188,18 @@ namespace FUNewsManagement.Controllers
             }
 
             var accounts = await _accountService.GetAllAccountsAsync();
-            return View(accounts);
+            if (!string.IsNullOrWhiteSpace(keyword))
+            {
+                accounts = accounts.Where(a => a.AccountName.Contains(keyword) || a.AccountEmail.Contains(keyword));
+            }
+
+            var vm = new AccountListViewModel
+            {
+                Accounts = accounts.ToList(),
+                SearchKeyword = keyword
+            };
+
+            return View(vm);
         }
 
         [HttpGet]
@@ -201,13 +219,22 @@ namespace FUNewsManagement.Controllers
             if (account == null)
                 return NotFound();
 
-            return View(account);
+            var vm = new AccountFormViewModel
+            {
+                AccountId = account.AccountId,
+                AccountName = account.AccountName,
+                AccountEmail = account.AccountEmail,
+                AccountRole = account.AccountRole
+                // No password for edit
+            };
+
+            return View(vm);
         }
 
         [HttpPost]
         [ValidateAntiForgeryToken]
         [AuthorizeSession]
-        public async Task<IActionResult> EditUser(short id, SystemAccount account)
+        public async Task<IActionResult> EditUser(short id, AccountFormViewModel vm)
         {
             if (!IsAdmin)
             {
@@ -215,13 +242,21 @@ namespace FUNewsManagement.Controllers
                 return RedirectToAction("AccessDenied");
             }
 
-            if (id != account.AccountId)
+            if (id != vm.AccountId)
                 return NotFound();
 
             try
             {
                 if (ModelState.IsValid)
                 {
+                    var account = await _accountService.GetAccountByIdAsync(id);
+                    if (account == null)
+                        return NotFound();
+
+                    account.AccountName = vm.AccountName;
+                    account.AccountEmail = vm.AccountEmail;
+                    account.AccountRole = vm.AccountRole;
+
                     await _accountService.UpdateAccountAsync(account);
                     TempData["SuccessMessage"] = "User account updated successfully!";
                     return RedirectToAction(nameof(ManageAccounts));
@@ -232,7 +267,7 @@ namespace FUNewsManagement.Controllers
                 ModelState.AddModelError("", ex.Message);
             }
 
-            return View(account);
+            return View(vm);
         }
 
         [HttpGet]

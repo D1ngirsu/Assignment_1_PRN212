@@ -1,11 +1,12 @@
-﻿using BusinessObjects.Models;
+﻿// Updated CategoryController.cs
+using BusinessObjects.Models;
 using FUNewsManagement.Filters;
+using FUNewsManagement.Models.ViewModels;
 using Microsoft.AspNetCore.Mvc;
 using Services;
 
 namespace FUNewsManagement.Controllers
 {
-    // Kế thừa BaseController để có sẵn CurrentUser, IsLoggedIn, etc.
     public class CategoryController : BaseController
     {
         private readonly ICategoryService _categoryService;
@@ -15,14 +16,23 @@ namespace FUNewsManagement.Controllers
             _categoryService = categoryService;
         }
 
-        // GET: Category - Public, không cần login
-        public async Task<IActionResult> Index()
+        public async Task<IActionResult> Index(string? keyword = null)
         {
             var categories = await _categoryService.GetActiveCategoriesAsync();
-            return View(categories);
+            if (!string.IsNullOrWhiteSpace(keyword))
+            {
+                categories = categories.Where(c => c.CategoryName.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+            }
+
+            var vm = new CategoryListViewModel
+            {
+                Categories = categories.ToList(),
+                SearchKeyword = keyword
+            };
+
+            return View(vm);
         }
 
-        // GET: Category/Details/5 - Public
         public async Task<IActionResult> Details(short id)
         {
             if (id <= 0)
@@ -35,7 +45,6 @@ namespace FUNewsManagement.Controllers
             return View(category);
         }
 
-        // GET: Category/Create - Phải login và là Staff hoặc Admin
         [AuthorizeSession]
         public async Task<IActionResult> Create()
         {
@@ -45,15 +54,18 @@ namespace FUNewsManagement.Controllers
                 return RedirectToAction(nameof(Index));
             }
 
-            ViewBag.ParentCategories = await _categoryService.GetActiveCategoriesAsync();
-            return View();
+            var vm = new CategoryFormViewModel();
+            vm.ParentCategories = (await _categoryService.GetActiveCategoriesAsync())
+                .Where(c => c.CategoryId != vm.ParentCategoryId) // Avoid self-reference
+                .Select(c => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
+
+            return View(vm);
         }
 
-        // POST: Category/Create - Phải login và là Staff hoặc Admin
         [HttpPost]
         [ValidateAntiForgeryToken]
         [AuthorizeSession]
-        public async Task<IActionResult> Create(Category category)
+        public async Task<IActionResult> Create(CategoryFormViewModel vm)
         {
             if (!IsAdmin && !HasRole(1))
             {
@@ -65,6 +77,14 @@ namespace FUNewsManagement.Controllers
             {
                 if (ModelState.IsValid)
                 {
+                    var category = new Category
+                    {
+                        CategoryName = vm.CategoryName,
+                        CategoryDesciption = vm.CategoryDescription,
+                        ParentCategoryId = vm.ParentCategoryId,
+                        IsActive = vm.CategoryStatus
+                    };
+
                     await _categoryService.CreateCategoryAsync(category);
                     TempData["SuccessMessage"] = "Category created successfully!";
                     return RedirectToAction(nameof(Index));
@@ -75,11 +95,13 @@ namespace FUNewsManagement.Controllers
                 ModelState.AddModelError("", ex.Message);
             }
 
-            ViewBag.ParentCategories = await _categoryService.GetActiveCategoriesAsync();
-            return View(category);
+            vm.ParentCategories = (await _categoryService.GetActiveCategoriesAsync())
+                .Where(c => c.CategoryId != vm.ParentCategoryId)
+                .Select(c => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
+
+            return View(vm);
         }
 
-        // GET: Category/Edit/5 - Phải login và là Staff hoặc Admin
         [AuthorizeSession]
         public async Task<IActionResult> Edit(short id)
         {
@@ -96,17 +118,28 @@ namespace FUNewsManagement.Controllers
                 return RedirectToAction(nameof(Index));
             }
 
-            ViewBag.ParentCategories = await _categoryService.GetActiveCategoriesAsync();
-            return View(category);
+            var vm = new CategoryFormViewModel
+            {
+                CategoryId = category.CategoryId,
+                CategoryName = category.CategoryName,
+                CategoryDescription = category.CategoryDesciption,
+                ParentCategoryId = category.ParentCategoryId,
+                CategoryStatus = category.IsActive ?? true
+            };
+
+            vm.ParentCategories = (await _categoryService.GetActiveCategoriesAsync())
+                .Where(c => c.CategoryId != id)
+                .Select(c => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
+
+            return View(vm);
         }
 
-        // POST: Category/Edit/5 - Phải login và là Staff hoặc Admin
         [HttpPost]
         [ValidateAntiForgeryToken]
         [AuthorizeSession]
-        public async Task<IActionResult> Edit(short id, Category category)
+        public async Task<IActionResult> Edit(short id, CategoryFormViewModel vm)
         {
-            if (id != category.CategoryId)
+            if (id != vm.CategoryId)
                 return NotFound();
 
             if (!IsAdmin && !HasRole(1))
@@ -119,6 +152,15 @@ namespace FUNewsManagement.Controllers
             {
                 if (ModelState.IsValid)
                 {
+                    var category = await _categoryService.GetCategoryByIdAsync(id);
+                    if (category == null)
+                        return NotFound();
+
+                    category.CategoryName = vm.CategoryName;
+                    category.CategoryDesciption = vm.CategoryDescription;
+                    category.ParentCategoryId = vm.ParentCategoryId;
+                    category.IsActive = vm.CategoryStatus;
+
                     await _categoryService.UpdateCategoryAsync(category);
                     TempData["SuccessMessage"] = "Category updated successfully!";
                     return RedirectToAction(nameof(Index));
@@ -129,11 +171,13 @@ namespace FUNewsManagement.Controllers
                 ModelState.AddModelError("", ex.Message);
             }
 
-            ViewBag.ParentCategories = await _categoryService.GetActiveCategoriesAsync();
-            return View(category);
+            vm.ParentCategories = (await _categoryService.GetActiveCategoriesAsync())
+                .Where(c => c.CategoryId != id)
+                .Select(c => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
+
+            return View(vm);
         }
 
-        // POST: Category/Delete/5 - Staff hoặc Admin, chỉ xóa nếu không có news liên kết
         [HttpPost, ActionName("Delete")]
         [ValidateAntiForgeryToken]
         [AuthorizeSession]

@@ -1,5 +1,6 @@
 ﻿<!DOCTYPE html>
 <html lang="en">
+    @using FUNewsManagement.Helpers
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -13,7 +14,7 @@
     <header>
         <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3">
             <div class="container-fluid">
-                <a class="navbar-brand" asp-area="" asp-controller="Home" asp-action="Index">FUNewsManagement</a>
+                <a class="navbar-brand" asp-area="" asp-controller="News" asp-action="Index">FUNewsManagement</a>
                 <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" aria-controls="navbarSupportedContent"
                         aria-expanded="false" aria-label="Toggle navigation">
                     <span class="navbar-toggler-icon"></span>
@@ -21,11 +22,68 @@
                 <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
                     <ul class="navbar-nav flex-grow-1">
                         <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-controller="Home" asp-action="Index">Home</a>
+                            <a class="nav-link text-dark" asp-area="" asp-controller="News" asp-action="Index">Home</a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link text-dark" asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
                         </li>
+                        @if (Context.Session.IsLoggedIn())  // SỬA: Sử dụng extension method
+                        {
+                            var currentUserJson = Context.Session.GetString("CurrentUser");
+                            if (!string.IsNullOrEmpty(currentUserJson))
+                            {
+                                var currentUser = System.Text.Json.JsonSerializer.Deserialize<BusinessObjects.Models.SystemAccount>(currentUserJson);
+                                var accountRole = currentUser?.AccountRole ?? 2; // Default to 2 if null
+
+                                if (accountRole == 1) // Staff
+                                {
+                                    <li class="nav-item">
+                                        <a class="nav-link text-dark" asp-controller="Category" asp-action="Index">Categories</a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a class="nav-link text-dark" asp-controller="News" asp-action="MyNews">My News</a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a class="nav-link text-dark" asp-controller="Account" asp-action="Profile">Profile</a>
+                                    </li>
+                                }
+                                else if (accountRole == 3) // Admin
+                                {
+                                    <li class="nav-item">
+                                        <a class="nav-link text-dark" asp-controller="Account" asp-action="ManageAccounts">Manage Accounts</a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a class="nav-link text-dark" asp-controller="News" asp-action="Report">Reports</a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a class="nav-link text-dark" asp-controller="Account" asp-action="Profile">Profile</a>
+                                    </li>
+                                }
+                                // Lecturer (role 2) has no additional menu items beyond Home
+                            }
+                        }
+                    </ul>
+                    <ul class="navbar-nav">
+                        @if (!Context.Session.IsLoggedIn())  // SỬA: Sử dụng extension method (phủ định)
+                        {
+                            <li class="nav-item">
+                                <a class="nav-link text-dark" asp-controller="Account" asp-action="Login">Login</a>
+                            </li>
+                        }
+                        else
+                        {
+                            var currentUserJson = Context.Session.GetString("CurrentUser");
+                            if (!string.IsNullOrEmpty(currentUserJson))
+                            {
+                                var currentUser = System.Text.Json.JsonSerializer.Deserialize<BusinessObjects.Models.SystemAccount>(currentUserJson);
+                                <li class="nav-item">
+                                    <span class="nav-link text-dark">Welcome, @currentUser.AccountName</span>
+                                </li>
+                            }
+                            <li class="nav-item">
+                                <a class="nav-link text-dark" asp-controller="Account" asp-action="Logout">Logout</a>
+                            </li>
+                        }
                     </ul>
                 </div>
             </div>

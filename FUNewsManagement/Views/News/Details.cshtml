@@ -1,0 +1,30 @@
+﻿@model BusinessObjects.Models.NewsArticle
+@using BusinessObjects.Models
+@{
+    ViewData["Title"] = Model.NewsTitle;
+}
+
+<article>
+    <h1>@Model.NewsTitle</h1>
+    <p>Category: @Model.Category?.CategoryName | Status: @(Model.NewsStatus == true ? "Active" : "Inactive") | Created: @Model.CreatedDate</p>
+    <div>@Html.Raw(Model.NewsContent)</div>
+    <h3>Tags:</h3>
+    <ul>
+        @foreach (var tag in (Model.Tags ?? Enumerable.Empty<Tag>()))
+        {
+            <li>@tag.TagName</li>
+        }
+    </ul>
+</article>
+
+@if (User.IsInRole("Staff") || User.IsInRole("Admin"))
+{
+    <div>
+        <a asp-action="Edit" asp-route-id="@Model.NewsArticleId" class="btn btn-warning">Edit</a>
+        <form asp-action="Publish" method="post" style="display:inline;">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="id" value="@Model.NewsArticleId" />
+            <button type="submit" class="btn btn-info">Publish</button>
+        </form>
+    </div>
+}

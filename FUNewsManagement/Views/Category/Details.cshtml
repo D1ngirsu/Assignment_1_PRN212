@@ -1,0 +1,15 @@
+﻿@using BusinessObjects.Models
+@model BusinessObjects.Models.Category
+@{
+    ViewData["Title"] = Model.CategoryName;
+}
+
+<h1>@Model.CategoryName</h1>
+<p>@Model.CategoryDesciption</p>
+<h3>Associated News:</h3>
+<ul>
+    @foreach (var news in (Model.NewsArticles ?? Enumerable.Empty<NewsArticle>()))
+    {
+        <li><a asp-controller="News" asp-action="Details" asp-route-id="@news.NewsArticleId">@news.NewsTitle</a></li>
+    }
+</ul>

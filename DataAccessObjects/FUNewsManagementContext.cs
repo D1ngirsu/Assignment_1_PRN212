@@ -29,7 +29,7 @@ namespace DataAccessObject
             IConfiguration configuration = new ConfigurationBuilder()
             .SetBasePath(Directory.GetCurrentDirectory())
             .AddJsonFile("appsettings.json", true, true).Build();
-            return configuration["ConnectionStrings:DefaultConnectionString"];
+            return configuration["ConnectionStrings:FUNewsManagementDB"];
         }
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {

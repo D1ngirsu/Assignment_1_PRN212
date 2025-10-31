@@ -137,28 +137,24 @@ namespace Services
         public async Task EnsureDefaultAdminAsync()
         {
             var defaultEmail = _configuration["DefaultAdmin:Email"];
-            if (string.IsNullOrEmpty(defaultEmail))
-                return;
+            if (string.IsNullOrEmpty(defaultEmail)) return;
 
-            if (await EmailExistsAsync(defaultEmail))
-                return;
+            if (await EmailExistsAsync(defaultEmail)) return;
 
             var defaultPass = _configuration["DefaultAdmin:Password"];
-            if (string.IsNullOrEmpty(defaultPass))
-                return;
+            if (string.IsNullOrEmpty(defaultPass)) return;
 
-            var hashedPass = PasswordHelper.HashPassword(defaultPass);
             var adminRole = _configuration.GetValue<int>("Roles:Admin", UserRoles.Admin);
 
             var adminAccount = new SystemAccount
             {
                 AccountName = "System Administrator",
                 AccountEmail = defaultEmail,
-                AccountPassword = hashedPass,
+                AccountPassword = defaultPass,  // Plain! Let CreateAccountAsync hash
                 AccountRole = adminRole
             };
 
-            await CreateAccountAsync(adminAccount);
+            await CreateAccountAsync(adminAccount);  // Service will hash
         }
     }
 }

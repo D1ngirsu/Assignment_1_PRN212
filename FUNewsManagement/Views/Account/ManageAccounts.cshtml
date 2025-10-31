@@ -1,0 +1,31 @@
+﻿@model FUNewsManagement.Models.ViewModels.AccountListViewModel
+@{
+    ViewData["Title"] = "Manage Accounts";
+}
+
+<h1>Manage Accounts</h1>
+
+<!-- Search similar to others -->
+
+<table class="table">
+    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Actions</th></tr></thead>
+    <tbody>
+        @foreach (var item in Model.Accounts)
+        {
+            <tr>
+                <td>@item.AccountName</td>
+                <td>@item.AccountEmail</td>
+                <td>@(item.AccountRole == 1 ? "Staff" : item.AccountRole == 2 ? "Lecturer" : "Admin")</td>
+                <td>
+                    <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#accountModal" onclick="loadEditForm('@item.AccountId', 'Account')">Edit</button>
+                    <!-- No delete for accounts, or add with confirm -->
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<!-- Modal for Edit User, fields: Name, Email, Role dropdown (exclude self role if needed) -->
+<div class="modal fade" id="accountModal">
+    <!-- Similar structure, action to EditUser -->
+</div>

@@ -1,0 +1,178 @@
+﻿<!-- Updated Index.cshtml -->
+@model FUNewsManagement.Models.ViewModels.NewsListViewModel
+@using FUNewsManagement.Helpers  @* Import SessionManager *@
+@using Services  @* Import UserRoles từ Services namespace *@
+@{
+    ViewData["Title"] = "News Articles";
+    var session = Context.Session;  // Lấy session từ HttpContext
+    var userRole = session.GetCurrentUserRole();  // Lấy role từ session (int?)
+    bool canManage = session.IsLoggedIn() &&
+                     (userRole == UserRoles.Staff || userRole == UserRoles.Admin);  // Staff=1, Admin=3
+}
+
+<h1>News Articles</h1>
+
+<!-- Search Form -->
+<form asp-action="Search" method="get" class="mb-3">
+    <div class="row">
+        <div class="col-md-4">
+            <input type="text" name="keyword" class="form-control" placeholder="Search by title..." value="@Model.SearchKeyword" />
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary">Search</button>
+        </div>
+        @if (canManage)
+        {
+            <div class="col-md-6 text-end">
+                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#newsModal" onclick="loadCreateForm()">Create New</button>
+            </div>
+        }
+    </div>
+</form>
+
+<!-- News Table -->
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Category</th>
+            <th>Status</th>
+            <th>Created Date</th>
+            @if (canManage)
+            {
+                <th>Actions</th>
+            }
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var item in Model.NewsArticles)
+        {
+            <tr>
+                <td><a asp-action="Details" asp-route-id="@item.NewsArticleId">@item.NewsTitle</a></td>
+                <td>@(item.Category?.CategoryName ?? "Unknown")</td>
+                <td>@(item.NewsStatus == true ? "Active" : "Inactive")</td>
+                <td>@item.CreatedDate?.ToShortDateString()</td>
+                @if (canManage)
+                {
+                    <td>
+                        <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#newsModal" onclick="loadEditForm('@item.NewsArticleId')">Edit</button>
+                        <form asp-action="Delete" method="post" style="display:inline;" onsubmit="return confirm('Are you sure?')">
+                            <input type="hidden" name="id" value="@item.NewsArticleId" />
+                            <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                        </form>
+                        @if (!(item.NewsStatus ?? false))
+                        {
+                            <form asp-action="Publish" method="post" style="display:inline;"><input type="hidden" name="id" value="@item.NewsArticleId" /><button type="submit" class="btn btn-sm btn-info">Publish</button></form>
+                        }
+                    </td>
+                }
+            </tr>
+        }
+    </tbody>
+</table>
+
+@if (canManage)
+{
+    <!-- Modal for Create/Edit -->
+    <div class="modal fade" id="newsModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create News</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="newsForm" asp-action="Create" method="post">
+                    <!-- Dynamic to Edit via JS -->
+                    <div class="modal-body">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="NewsArticleId" id="newsId" />
+                        <div class="mb-3">
+                            <label class="form-label">Title</label>
+                            <input type="text" name="NewsTitle" id="newsTitle" class="form-control" required />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Content</label>
+                            <textarea name="NewsContent" id="newsContent" class="form-control" rows="5" required></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Category</label>
+                            <select name="CategoryId" id="categorySelect" class="form-select" required>
+                                @foreach (var cat in ViewBag.Categories ?? new List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>())
+                                {
+                                    <option value="@cat.Value">@cat.Text</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Tags (Multi-select)</label>
+                            <select name="SelectedTagIds" id="tagsSelect" multiple class="form-select">
+                                @foreach (var tag in ViewBag.Tags ?? new List<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem>())
+                                {
+                                    <option value="@tag.Value">@tag.Text</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" name="NewsStatus" id="newsStatus" class="form-check-input" checked />
+                            <label class="form-check-label">Active</label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="submit" class="btn btn-primary">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+}
+
+@section Scripts {
+    <script>
+        function loadCreateForm() {
+            document.getElementById('newsForm').action = '@Url.Action("Create")';
+            document.getElementById('newsId').value = '';
+            document.querySelector('#newsForm input[name="NewsTitle"]').value = '';
+            document.querySelector('#newsForm textarea[name="NewsContent"]').value = '';
+            document.querySelector('#newsForm select[name="CategoryId"]').value = '';
+            document.querySelector('#newsForm select[name="SelectedTagIds"]').selectedIndex = -1;
+            document.querySelector('#newsForm input[name="NewsStatus"]').checked = true;
+            document.getElementById('newsModal').querySelector('.modal-title').textContent = 'Create News';
+            // Clear all selections in multi-select
+            Array.from(document.querySelector('#newsForm select[name="SelectedTagIds"]').options).forEach(option => option.selected = false);
+        }
+
+        function loadEditForm(id) {
+            fetch('/News/GetEditData/' + id)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('newsId').value = data.newsArticleId;
+                        document.getElementById('newsTitle').value = data.newsTitle;
+                        document.getElementById('newsContent').value = data.newsContent;
+                        document.getElementById('categorySelect').value = data.categoryId;
+
+                        // Clear and select tags
+                        const tagSelect = document.getElementById('tagsSelect');
+                        Array.from(tagSelect.options).forEach(option => option.selected = false);
+                        if (data.selectedTagIds && data.selectedTagIds.length > 0) {
+                            data.selectedTagIds.forEach(tagId => {
+                                const option = tagSelect.querySelector(`option[value="${tagId}"]`);
+                                if (option) option.selected = true;
+                            });
+                        }
+
+                        document.getElementById('newsStatus').checked = data.newsStatus;
+                        document.getElementById('newsForm').action = '@Url.Action("Edit")';
+                        document.getElementById('newsModal').querySelector('.modal-title').textContent = 'Edit News';
+                    } else {
+                        alert('Error loading data: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to load edit data');
+                });
+        }
+    </script>
+}

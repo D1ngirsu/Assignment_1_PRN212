@@ -1,4 +1,4 @@
-namespace ProductManagementMVC.Models
+namespace FUNewsManagement.Models
 {
     public class ErrorViewModel
     {

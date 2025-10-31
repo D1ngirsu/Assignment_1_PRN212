@@ -1,6 +1,5 @@
 ﻿using DataAccessObject;
 using DataAccessObjects;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using Repositories;
 using Services;
@@ -42,6 +41,15 @@ builder.Services.AddHttpContextAccessor();
 
 var app = builder.Build();
 
+if (app.Environment.IsDevelopment())
+{
+    using (var scope = app.Services.CreateScope())
+    {
+        var accountService = scope.ServiceProvider.GetRequiredService<ISystemAccountService>();
+        await accountService.EnsureDefaultAdminAsync();
+    }
+}
+
 // Configure the HTTP request pipeline
 if (!app.Environment.IsDevelopment())
 {
@@ -49,18 +57,18 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseRouting();
 
 // ==================== SESSION MIDDLEWARE (QUAN TRỌNG) ====================
-app.UseSession(); // Phải đặt TRƯỚC UseAuthorization
+app.UseSession();
 
 app.UseAuthorization();
 
 app.MapControllerRoute(
     name: "default",
-    pattern: "{controller=Home}/{action=Index}/{id?}");
+    pattern: "{controller=News}/{action=Index}/{id?}");
 
 app.Run();

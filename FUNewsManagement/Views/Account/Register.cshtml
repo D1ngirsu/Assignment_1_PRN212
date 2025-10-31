@@ -1,0 +1,36 @@
+﻿@model FUNewsManagement.Models.ViewModels.RegisterViewModel
+@{
+    ViewData["Title"] = "Register";
+}
+
+<h1>Register</h1>
+<form asp-action="Register" method="post">
+    @Html.AntiForgeryToken()
+    <div class="mb-3">
+        <label asp-for="AccountName"></label>
+        <input asp-for="AccountName" class="form-control" />
+        <span asp-validation-for="AccountName" class="text-danger"></span>
+    </div>
+    <div class="mb-3">
+        <label asp-for="AccountEmail"></label>
+        <input asp-for="AccountEmail" class="form-control" />
+        <span asp-validation-for="AccountEmail" class="text-danger"></span>
+    </div>
+    <div class="mb-3">
+        <label asp-for="AccountPassword"></label>
+        <input asp-for="AccountPassword" type="password" class="form-control" />
+        <span asp-validation-for="AccountPassword" class="text-danger"></span>
+    </div>
+    <div class="mb-3">
+        <label asp-for="AccountRole">Role</label>
+        <select asp-for="AccountRole" class="form-select">
+            <option value="2">Lecturer</option>
+            <!-- Admin/Staff only via admin panel -->
+        </select>
+    </div>
+    @if (!string.IsNullOrEmpty(ViewBag.Error))
+    {
+        <div class="alert alert-danger">@ViewBag.Error</div>
+    }
+    <button type="submit" class="btn btn-primary">Register</button>
+</form>
