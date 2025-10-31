@@ -1,4 +1,5 @@
-﻿@using FUNewsManagement.Helpers  @* Import SessionManager *@
+﻿@* Updated Index.cshtml for Tag *@
+@using FUNewsManagement.Helpers  @* Import SessionManager *@
 @using Services  @* Import UserRoles từ Services namespace *@
 @model FUNewsManagement.Models.ViewModels.TagListViewModel
 @{
@@ -11,22 +12,42 @@
 
 <h1>Tags</h1>
 
+<!-- Hiển thị Success/Error Message từ TempData -->
+@if (TempData["SuccessMessage"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        @TempData["SuccessMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        @TempData["ErrorMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
 @if (canManage)
 {
     <button type="button" class="btn btn-success mb-3" data-bs-toggle="modal" data-bs-target="#tagModal" onclick="loadCreateForm('Tag')">Create Tag</button>
 }
 
 <table class="table">
-    <thead><tr><th>Name</th><th>Description</th>@if(canManage){
-    <th>Actions</th>
-        }
-</tr></thead>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Note</th>@if(canManage){
+            <th>Actions</th>
+                        }
+        </tr>
+    </thead>
     <tbody>
         @foreach (var item in Model.Tags)
         {
             <tr>
                 <td>@item.TagName</td>
-                <td>@item.TagId</td>
+                <td>@item.Note</td>
                 @if (canManage)
                 {
                     <td>
@@ -45,20 +66,56 @@
 
 @if (canManage)
 {
-    <!-- Simple Modal for Tag Form: Name, Description -->
+    <!-- Simple Modal for Tag Form: Name, Note -->
     <div class="modal fade" id="tagModal">
         <div class="modal-dialog">
             <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create Tag</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
                 <form id="tagForm" asp-action="Create" method="post">
                     @Html.AntiForgeryToken()
                     <div class="modal-body">
                         <input type="hidden" name="TagId" id="tagId" />
-                        <div class="mb-3"><label>Name</label><input name="TagName" class="form-control" required /></div>
-                        <div class="mb-3"><label>Description</label><textarea name="TagDescription" class="form-control"></textarea></div>
+                        <div class="mb-3"><label>Name <span class="text-danger">*</span></label><input name="TagName" id="tagName" class="form-control" required /></div>
+                        <div class="mb-3"><label>Note</label><textarea name="Note" id="tagNote" class="form-control"></textarea></div>
                     </div>
-                    <div class="modal-footer"><button type="submit" class="btn btn-primary">Save</button></div>
+                    <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button><button type="submit" class="btn btn-primary">Save</button></div>
                 </form>
             </div>
         </div>
     </div>
+}
+
+@section Scripts {
+    <script>
+        function loadCreateForm() {
+            document.getElementById('tagForm').action = '@Url.Action("Create")';
+            document.getElementById('tagId').value = '';
+            document.getElementById('tagName').value = '';
+            document.getElementById('tagNote').value = '';
+            document.querySelector('#tagModal .modal-title').textContent = 'Create Tag';
+        }
+        function loadEditForm(id) {
+            // AJAX to fetch data and populate form
+            fetch('/Tag/GetEditData/' + id)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('tagId').value = data.tagId;
+                        document.getElementById('tagName').value = data.tagName;
+                        document.getElementById('tagNote').value = data.note;
+                        document.getElementById('tagForm').action = '@Url.Action("Edit")';
+                        document.querySelector('#tagModal .modal-title').textContent = 'Edit Tag';
+                    } else {
+                        alert('Error loading data: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to load edit data');
+                });
+        }
+    </script>
 }

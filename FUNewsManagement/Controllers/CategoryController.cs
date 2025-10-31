@@ -80,7 +80,7 @@ namespace FUNewsManagement.Controllers
                     var category = new Category
                     {
                         CategoryName = vm.CategoryName,
-                        CategoryDesciption = vm.CategoryDescription,
+                        CategoryDesciption = vm.CategoryDesciption,
                         ParentCategoryId = vm.ParentCategoryId,
                         IsActive = vm.CategoryStatus
                     };
@@ -99,7 +99,37 @@ namespace FUNewsManagement.Controllers
                 .Where(c => c.CategoryId != vm.ParentCategoryId)
                 .Select(c => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
 
+            // Avoid returning View; prepare for modal
             return View(vm);
+        }
+
+        [AuthorizeSession]
+        public async Task<IActionResult> GetEditData(short id)
+        {
+            if (id <= 0)
+                return Json(new { success = false, message = "Invalid ID" });
+
+            var category = await _categoryService.GetCategoryByIdAsync(id);
+            if (category == null)
+                return Json(new { success = false, message = "Category not found" });
+
+            if (!IsAdmin && !HasRole(1))
+                return Json(new { success = false, message = "No permission" });
+
+            var parentCategories = (await _categoryService.GetActiveCategoriesAsync())
+                .Where(c => c.CategoryId != id)
+                .Select(c => new { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
+
+            return Json(new
+            {
+                success = true,
+                categoryId = category.CategoryId,
+                categoryName = category.CategoryName,
+                categoryDesciption = category.CategoryDesciption,
+                parentCategoryId = category.ParentCategoryId,
+                categoryStatus = category.IsActive ?? true,
+                parentCategories
+            });
         }
 
         [AuthorizeSession]
@@ -122,7 +152,7 @@ namespace FUNewsManagement.Controllers
             {
                 CategoryId = category.CategoryId,
                 CategoryName = category.CategoryName,
-                CategoryDescription = category.CategoryDesciption,
+                CategoryDesciption = category.CategoryDesciption,
                 ParentCategoryId = category.ParentCategoryId,
                 CategoryStatus = category.IsActive ?? true
             };
@@ -157,7 +187,7 @@ namespace FUNewsManagement.Controllers
                         return NotFound();
 
                     category.CategoryName = vm.CategoryName;
-                    category.CategoryDesciption = vm.CategoryDescription;
+                    category.CategoryDesciption = vm.CategoryDesciption;
                     category.ParentCategoryId = vm.ParentCategoryId;
                     category.IsActive = vm.CategoryStatus;
 
@@ -175,6 +205,7 @@ namespace FUNewsManagement.Controllers
                 .Where(c => c.CategoryId != id)
                 .Select(c => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
 
+            // Avoid returning View; prepare for modal
             return View(vm);
         }
 

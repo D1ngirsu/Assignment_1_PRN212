@@ -1,4 +1,5 @@
-﻿using BusinessObjects.Models;
+﻿// Updated CategoryFormViewModel.cs
+using BusinessObjects.Models;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
@@ -13,7 +14,7 @@ namespace FUNewsManagement.Models.ViewModels
         [StringLength(200, ErrorMessage = "Tên không được vượt quá 200 ký tự")]
         public string CategoryName { get; set; } = string.Empty;
 
-        public string? CategoryDescription { get; set; }
+        public string? CategoryDesciption { get; set; }
 
         public short? ParentCategoryId { get; set; }
 

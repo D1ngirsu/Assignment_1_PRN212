@@ -1,5 +1,4 @@
-﻿
-using BusinessObjects.Models;
+﻿using BusinessObjects.Models;
 using Repositories;
 using System;
 using System.Collections.Generic;
@@ -73,19 +72,16 @@ namespace Services
 
         public async Task<NewsArticle> CreateNewsAsync(NewsArticle newsArticle)
         {
-            // Business validation
             if (string.IsNullOrWhiteSpace(newsArticle.NewsArticleId))
                 throw new ArgumentException("News Article ID is required");
 
             if (string.IsNullOrWhiteSpace(newsArticle.Headline))
                 throw new ArgumentException("Headline is required");
 
-            // Check if ID already exists
             var existing = await _newsArticleRepository.GetByIdAsync(newsArticle.NewsArticleId);
             if (existing != null)
                 throw new InvalidOperationException($"News article with ID {newsArticle.NewsArticleId} already exists");
 
-            // Set default values
             newsArticle.CreatedDate = newsArticle.CreatedDate ?? DateTime.Now;
             newsArticle.NewsStatus = newsArticle.NewsStatus ?? false;
 
@@ -94,7 +90,6 @@ namespace Services
 
         public async Task UpdateNewsAsync(NewsArticle newsArticle)
         {
-            // Business validation
             var existing = await _newsArticleRepository.GetByIdAsync(newsArticle.NewsArticleId);
             if (existing == null)
                 throw new KeyNotFoundException($"News article with ID {newsArticle.NewsArticleId} not found");
@@ -102,7 +97,6 @@ namespace Services
             if (string.IsNullOrWhiteSpace(newsArticle.Headline))
                 throw new ArgumentException("Headline is required");
 
-            // Update modified date
             newsArticle.ModifiedDate = DateTime.Now;
 
             await _newsArticleRepository.UpdateAsync(newsArticle);
@@ -143,39 +137,34 @@ namespace Services
 
         public async Task<int> GetNextNewsIdAsync()
         {
-            // Lấy tất cả ID (hoặc optimize: chỉ max nếu repo hỗ trợ)
             var allNews = await GetAllNewsAsync();
             var maxId = allNews
-                .Where(n => int.TryParse(n.NewsArticleId, out _))  // Chỉ parse ID số hợp lệ
-                .Max(n => int.TryParse(n.NewsArticleId, out int id) ? id : 0);  // Max int, fallback 0
+                .Where(n => int.TryParse(n.NewsArticleId, out _))
+                .Max(n => int.TryParse(n.NewsArticleId, out int id) ? id : 0);
 
-            return maxId + 1;  // ID tiếp theo
+            return maxId + 1;
         }
 
-        // Implementation for adding tags to news (via junction table or navigation)
+        // FIX: Sửa lỗi vòng lặp thừa
         public async Task AddTagsToNewsAsync(string newsArticleId, IEnumerable<int> tagIds)
         {
-            if (string.IsNullOrWhiteSpace(newsArticleId) || !tagIds?.Any() == true)
+            if (string.IsNullOrWhiteSpace(newsArticleId) || tagIds == null || !tagIds.Any())
                 return;
 
             var newsArticle = await _newsArticleRepository.GetByIdAsync(newsArticleId);
             if (newsArticle == null)
                 throw new KeyNotFoundException($"News article with ID {newsArticleId} not found");
 
-            // Use repository method to add to junction (avoids loading full Tags if not needed)
-            foreach (var tagId in tagIds.Distinct())
-            {
-                await _newsArticleRepository.AddNewsTagAsync(newsArticleId, tagId);
-            }
+            // Gọi repository 1 lần duy nhất với toàn bộ tagIds
+            await _newsArticleRepository.AddTagsToNewsAsync(newsArticleId, tagIds.Distinct());
         }
 
-        // Implementation for removing all tags from news
         public async Task RemoveAllTagsFromNewsAsync(string newsArticleId)
         {
             if (string.IsNullOrWhiteSpace(newsArticleId))
                 return;
 
-            await _newsArticleRepository.RemoveAllNewsTagsAsync(newsArticleId);
+            await _newsArticleRepository.RemoveAllTagsFromNewsAsync(newsArticleId);
         }
     }
 }

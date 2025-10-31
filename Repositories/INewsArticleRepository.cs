@@ -1,23 +1,29 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿
 using BusinessObjects.Models;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace Repositories
 {
-    public interface INewsArticleRepository : IGenericRepository<NewsArticle>
+    public interface INewsArticleRepository
     {
+        Task<IEnumerable<NewsArticle>> GetAllAsync();
+        Task<NewsArticle?> GetByIdAsync(string newsArticleId);
+        Task<NewsArticle?> GetNewsWithDetailsAsync(string newsArticleId);
         Task<IEnumerable<NewsArticle>> GetActiveNewsAsync();
         Task<IEnumerable<NewsArticle>> GetNewsByCategoryAsync(short categoryId);
         Task<IEnumerable<NewsArticle>> GetNewsByAuthorAsync(short authorId);
         Task<IEnumerable<NewsArticle>> GetNewsByTagAsync(int tagId);
-        Task<NewsArticle?> GetNewsWithDetailsAsync(string newsArticleId);
         Task<IEnumerable<NewsArticle>> SearchNewsAsync(string keyword);
         Task<IEnumerable<NewsArticle>> GetLatestNewsAsync(int count);
         Task<IEnumerable<NewsArticle>> GetNewsByDateRangeAsync(DateTime startDate, DateTime endDate);
-        Task AddNewsTagAsync(string newsArticleId, int tagId);
-        Task RemoveAllNewsTagsAsync(string newsArticleId);
+        Task<NewsArticle> AddAsync(NewsArticle newsArticle);
+        Task UpdateAsync(NewsArticle newsArticle);
+        Task DeleteAsync(string newsArticleId);
+
+        // Methods for tag handling (no explicit junction entity needed)
+        Task AddTagsToNewsAsync(string newsArticleId, IEnumerable<int> tagIds);
+        Task RemoveAllTagsFromNewsAsync(string newsArticleId);
     }
 }

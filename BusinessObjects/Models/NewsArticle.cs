@@ -1,4 +1,5 @@
-﻿using System;
+﻿// NewsArticle.cs (giữ nguyên, chỉ cần ICollection<Tag> Tags)
+using System;
 using System.Collections.Generic;
 
 namespace BusinessObjects.Models;
@@ -31,5 +32,6 @@ public partial class NewsArticle
 
     public virtual SystemAccount? CreatedBy { get; set; }
 
+    // Navigation cho many-to-many (EF tự quản lý junction)
     public virtual ICollection<Tag> Tags { get; set; } = new List<Tag>();
 }

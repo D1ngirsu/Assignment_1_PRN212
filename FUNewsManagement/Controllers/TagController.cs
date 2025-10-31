@@ -82,7 +82,7 @@ namespace FUNewsManagement.Controllers
                     var tag = new Tag
                     {
                         TagName = vm.TagName,
-                        Note = vm.TagDescription
+                        Note = vm.Note
                     };
 
                     await _tagService.CreateTagAsync(tag);
@@ -95,7 +95,31 @@ namespace FUNewsManagement.Controllers
                 ModelState.AddModelError("", ex.Message);
             }
 
+            // Avoid returning View; instead, prepare for modal handling (but since modal uses AJAX, consider Json response in future)
+            // For now, return View to maintain compatibility, but adjust JS to handle
             return View(vm);
+        }
+
+        [AuthorizeSession]
+        public async Task<IActionResult> GetEditData(int id)
+        {
+            if (id <= 0)
+                return Json(new { success = false, message = "Invalid ID" });
+
+            var tag = await _tagService.GetTagByIdAsync(id);
+            if (tag == null)
+                return Json(new { success = false, message = "Tag not found" });
+
+            if (!IsAdmin)
+                return Json(new { success = false, message = "No permission" });
+
+            return Json(new
+            {
+                success = true,
+                tagId = tag.TagId,
+                tagName = tag.TagName,
+                note = tag.Note
+            });
         }
 
         [AuthorizeSession]
@@ -118,7 +142,7 @@ namespace FUNewsManagement.Controllers
             {
                 TagId = tag.TagId,
                 TagName = tag.TagName,
-                TagDescription = tag.Note
+                Note = tag.Note
             };
 
             return View(vm);
@@ -147,7 +171,7 @@ namespace FUNewsManagement.Controllers
                         return NotFound();
 
                     tag.TagName = vm.TagName;
-                    tag.Note = vm.TagDescription;
+                    tag.Note = vm.Note;
 
                     await _tagService.UpdateTagAsync(tag);
                     TempData["SuccessMessage"] = "Tag updated successfully!";
@@ -159,6 +183,7 @@ namespace FUNewsManagement.Controllers
                 ModelState.AddModelError("", ex.Message);
             }
 
+            // Avoid returning View; prepare for modal
             return View(vm);
         }
 

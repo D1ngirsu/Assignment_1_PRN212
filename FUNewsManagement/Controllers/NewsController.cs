@@ -307,7 +307,7 @@ namespace FUNewsManagement.Controllers
         }
 
         [AuthorizeSession]
-        public async Task<IActionResult> MyNews()
+        public async Task<IActionResult> MyNews(string? keyword = null, int page = 1)
         {
             if (!HasRole(1) && !IsAdmin)
             {
@@ -319,11 +319,43 @@ namespace FUNewsManagement.Controllers
                 return RedirectToAction("Login", "Account");
 
             var myNews = await _newsService.GetNewsByAuthorAsync(CurrentUserId.Value);
+            if (!string.IsNullOrWhiteSpace(keyword))
+            {
+                myNews = myNews.Where(n => n.NewsTitle.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+            }
+
+            int pageSize = 10;
+            var totalItems = myNews.Count();
+            var pagedNews = myNews.OrderByDescending(n => n.CreatedDate)
+                                  .Skip((page - 1) * pageSize)
+                                  .Take(pageSize)
+                                  .ToList();
+            int totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
+
+            var categories = await _categoryService.GetAllCategoriesAsync();
+            var catDict = categories.ToDictionary(c => c.CategoryId, c => c);
+            foreach (var article in pagedNews)
+            {
+                if (article.CategoryId.HasValue && catDict.TryGetValue(article.CategoryId.Value, out var cat))
+                {
+                    article.Category = cat;
+                }
+            }
+
             var vm = new MyNewsViewModel
             {
-                NewsArticles = myNews.ToList(),
-                UserId = CurrentUserId.Value
+                NewsArticles = pagedNews,
+                SearchKeyword = keyword,
+                UserId = CurrentUserId.Value,
+                CurrentPage = page,
+                PageSize = pageSize,
+                TotalPages = totalPages,
+                TotalItems = totalItems
             };
+
+            ViewBag.Categories = categories.Select(c => new SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
+            var tags = await _tagService.GetAllTagsAsync();
+            ViewBag.Tags = tags.Select(t => new SelectListItem { Value = t.TagId.ToString(), Text = t.TagName }).ToList();
 
             return View(vm);
         }
@@ -353,6 +385,63 @@ namespace FUNewsManagement.Controllers
             };
 
             return View(vm);
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        [AuthorizeSession]
+        public async Task<IActionResult> Report(NewsReportViewModel model)
+        {
+            if (!IsAdmin)
+            {
+                TempData["ErrorMessage"] = "You don't have permission to access reports.";
+                return RedirectToAction(nameof(Index));
+            }
+
+            // Kiểm tra ModelState để xử lý lỗi binding (ví dụ: ngày không hợp lệ hoặc rỗng)
+            if (!ModelState.IsValid)
+            {
+                var errorMessages = ModelState
+                    .Where(x => x.Value.Errors.Count > 0)
+                    .Select(x => $"{x.Key}: {string.Join(", ", x.Value.Errors.Select(e => e.ErrorMessage))}")
+                    .ToList();
+                TempData["ErrorMessage"] = "Validation errors: " + string.Join("; ", errorMessages);
+                // Fallback to defaults
+                model.StartDate = DateTime.Now.AddMonths(-1).Date;
+                model.EndDate = DateTime.Now.Date;
+                model.NewsInPeriod = new List<NewsArticle>();
+                model.TotalNews = 0;
+                return View(model);
+            }
+
+            // Validate dates
+            if (model.StartDate > model.EndDate)
+            {
+                TempData["ErrorMessage"] = "Start date must be before or equal to end date.";
+                // Fallback to defaults
+                model.StartDate = DateTime.Now.AddMonths(-1).Date;
+                model.EndDate = DateTime.Now.Date;
+            }
+
+            try
+            {
+                var newsInPeriod = await _newsService.GetNewsByDateRangeAsync(model.StartDate, model.EndDate);
+                model.NewsInPeriod = newsInPeriod
+                    .OrderByDescending(n => model.SortBy == "CreatedDate" ? n.CreatedDate : n.ModifiedDate ?? n.CreatedDate)  // Dynamic sort nếu cần
+                    .ToList();
+                model.TotalNews = newsInPeriod.Count();
+            }
+            catch (ArgumentException ex)
+            {
+                TempData["ErrorMessage"] = ex.Message;
+                // Reload with defaults
+                model.StartDate = DateTime.Now.AddMonths(-1).Date;
+                model.EndDate = DateTime.Now.Date;
+                model.NewsInPeriod = new List<NewsArticle>();
+                model.TotalNews = 0;
+            }
+
+            return View(model);
         }
 
         public async Task<IActionResult> Search(string keyword, int page = 1)

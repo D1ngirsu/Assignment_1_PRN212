@@ -1,4 +1,5 @@
-﻿using BusinessObjects.Models;
+﻿// Updated TagFormViewModel.cs
+using BusinessObjects.Models;
 using System.ComponentModel.DataAnnotations;
 
 namespace FUNewsManagement.Models.ViewModels
@@ -11,6 +12,6 @@ namespace FUNewsManagement.Models.ViewModels
         [StringLength(100, ErrorMessage = "Tên tag không được vượt quá 100 ký tự")]
         public string TagName { get; set; } = string.Empty;
 
-        public string? TagDescription { get; set; }
+        public string? Note { get; set; }
     }
 }

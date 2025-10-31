@@ -1,15 +1,32 @@
-﻿@model FUNewsManagement.Models.ViewModels.CategoryListViewModel
+﻿@* Updated Index.cshtml for Category *@
+@model FUNewsManagement.Models.ViewModels.CategoryListViewModel
 @using FUNewsManagement.Helpers  @* Import SessionManager *@
 @using Services  @* Import UserRoles từ Services namespace *@
 @{
     ViewData["Title"] = "Categories";
-    var session = Context.Session;  // Lấy session từ HttpContext
-    var userRole = session.GetCurrentUserRole();  // Lấy role từ session (int?)
+    var session = Context.Session;  
+    var userRole = session.GetCurrentUserRole(); 
     bool canManage = session.IsLoggedIn() &&
                      (userRole == UserRoles.Staff || userRole == UserRoles.Admin);  // Staff=1, Admin=3
 }
 
 <h1>Categories</h1>
+
+<!-- Hiển thị Success/Error Message từ TempData -->
+@if (TempData["SuccessMessage"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        @TempData["SuccessMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        @TempData["ErrorMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
 
 <!-- Search -->
 <form asp-action="Index" method="get" class="mb-3">
@@ -22,10 +39,15 @@
 </form>
 
 <table class="table">
-    <thead><tr><th>Name</th><th>Description</th><th>Status</th>@if(canManage){
-    <th>Actions</th>
-        }
-</tr></thead>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Description</th>
+            <th>Status</th>@if(canManage){
+            <th>Actions</th>
+                        }
+        </tr>
+    </thead>
     <tbody>
         @foreach (var item in Model.Categories.Where(c => c.IsActive == true)) // Active only for public
         {
@@ -55,44 +77,70 @@
     <div class="modal fade" id="categoryModal">
         <div class="modal-dialog">
             <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create Category</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
                 <form id="categoryForm" asp-action="Create" method="post">
                     @Html.AntiForgeryToken()
                     <div class="modal-body">
                         <input type="hidden" name="CategoryId" id="catId" />
-                        <div class="mb-3"><label>Name</label><input name="CategoryName" class="form-control" required /></div>
-                        <div class="mb-3"><label>Description</label><textarea name="CategoryDescription" class="form-control"></textarea></div>
-                        <div class="mb-3"><label>Parent</label><select name="ParentCategoryId" class="form-select">@foreach(var p in ViewBag.ParentCategories){
-                        <option value="@p.Value">@p.Text</option>
-                    }
-</select></div>
-                    <div class="mb-3 form-check"><input type="checkbox" name="CategoryStatus" checked class="form-check-input" /><label>Active</label></div>
-                </div>
-                <div class="modal-footer"><button type="submit" class="btn btn-primary">Save</button></div>
-            </form>
+                        <div class="mb-3"><label>Name <span class="text-danger">*</span></label><input name="CategoryName" id="catName" class="form-control" required /></div>
+                        <div class="mb-3"><label>Description</label><textarea name="CategoryDesciption" id="catDesciption" class="form-control"></textarea></div>
+                        <div class="mb-3"><label>Parent</label><select name="ParentCategoryId" id="parentCatSelect" class="form-select"></select></div>
+                        <div class="mb-3 form-check"><input type="checkbox" name="CategoryStatus" id="catStatus" checked class="form-check-input" /><label>Active</label></div>
+                    </div>
+                    <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button><button type="submit" class="btn btn-primary">Save</button></div>
+                </form>
+            </div>
         </div>
     </div>
-</div>
 }
 
 @section Scripts {
     <!-- Similar JS for loadCreateForm, loadEditForm with AJAX -->
     <script>
         function loadCreateForm() {
-            document.getElementById('newsForm').action = '@Url.Action("Create")';
-            document.getElementById('newsId').value = '';
-            // Clear form fields
-            document.querySelector('#newsForm').reset();
+            document.getElementById('categoryForm').action = '@Url.Action("Create")';
+            document.getElementById('catId').value = '';
+            document.getElementById('catName').value = '';
+            document.getElementById('catDesciption').value = '';
+            document.getElementById('parentCatSelect').innerHTML = '<option value="">-- Select Parent --</option>'; // Clear and reload if needed
+            document.getElementById('catStatus').checked = true;
+            document.querySelector('#categoryModal .modal-title').textContent = 'Create Category';
         }
         function loadEditForm(id) {
             // AJAX to fetch data and populate form
-            fetch('/News/Edit/' + id)
+            fetch('/Category/GetEditData/' + id)
                 .then(response => response.json())
                 .then(data => {
-                    document.getElementById('newsId').value = data.newsArticleId;
-                    // Populate fields...
-                    document.getElementById('newsForm').action = '@Url.Action("Edit")';
+                    if (data.success) {
+                        document.getElementById('catId').value = data.categoryId;
+                        document.getElementById('catName').value = data.categoryName;
+                        document.getElementById('catDesciption').value = data.categoryDesciption;
+                        document.getElementById('parentCatSelect').value = data.parentCategoryId;
+
+                        // Populate parent options
+                        const select = document.getElementById('parentCatSelect');
+                        select.innerHTML = '<option value="">-- Select Parent --</option>';
+                        data.parentCategories.forEach(cat => {
+                            const option = document.createElement('option');
+                            option.value = cat.Value;
+                            option.text = cat.Text;
+                            select.appendChild(option);
+                        });
+
+                        document.getElementById('catStatus').checked = data.categoryStatus;
+                        document.getElementById('categoryForm').action = '@Url.Action("Edit")';
+                        document.querySelector('#categoryModal .modal-title').textContent = 'Edit Category';
+                    } else {
+                        alert('Error loading data: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to load edit data');
                 });
-            document.getElementById('newsModal').querySelector('.modal-title').textContent = 'Edit News';
         }
     </script>
 }

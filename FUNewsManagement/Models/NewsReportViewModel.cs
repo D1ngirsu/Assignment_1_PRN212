@@ -10,6 +10,6 @@ namespace FUNewsManagement.Models.ViewModels
         public DateTime EndDate { get; set; } = DateTime.Now.Date;
         public List<NewsArticle> NewsInPeriod { get; set; } = new List<NewsArticle>();
         public int TotalNews { get; set; }
-        public string? SortBy { get; set; } = "CreatedDate"; // Descending by default
+        public string? SortBy { get; set; } = "CreatedDate";
     }
 }
