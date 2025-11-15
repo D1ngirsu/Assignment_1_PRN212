@@ -1,8 +1,10 @@
 ﻿// Updated CategoryController.cs
 using BusinessObjects.Models;
 using FUNewsManagement.Filters;
+using FUNewsManagement.Hubs;
 using FUNewsManagement.Models.ViewModels;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Services;
 
 namespace FUNewsManagement.Controllers
@@ -10,15 +12,22 @@ namespace FUNewsManagement.Controllers
     public class CategoryController : BaseController
     {
         private readonly ICategoryService _categoryService;
+        private readonly IHubContext<SignalrServer> _hubContext;
 
-        public CategoryController(ICategoryService categoryService)
+        public CategoryController(ICategoryService categoryService,
+            IHubContext<SignalrServer> hubContext)
         {
             _categoryService = categoryService;
+            _hubContext = hubContext;
         }
 
         public async Task<IActionResult> Index(string? keyword = null)
         {
-            var categories = await _categoryService.GetActiveCategoriesAsync();
+            // FIXED: Managers see all categories, others see only active ones
+            var categories = (IsAdmin || HasRole(1))
+                ? await _categoryService.GetAllCategoriesAsync()
+                : await _categoryService.GetActiveCategoriesAsync();
+
             if (!string.IsNullOrWhiteSpace(keyword))
             {
                 categories = categories.Where(c => c.CategoryName.Contains(keyword, StringComparison.OrdinalIgnoreCase));
@@ -54,12 +63,8 @@ namespace FUNewsManagement.Controllers
                 return RedirectToAction(nameof(Index));
             }
 
-            var vm = new CategoryFormViewModel();
-            vm.ParentCategories = (await _categoryService.GetActiveCategoriesAsync())
-                .Where(c => c.CategoryId != vm.ParentCategoryId) // Avoid self-reference
-                .Select(c => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
-
-            return View(vm);
+            TempData["ErrorMessage"] = "Use the modal in Index to create categories.";
+            return RedirectToAction(nameof(Index));
         }
 
         [HttpPost]
@@ -73,53 +78,66 @@ namespace FUNewsManagement.Controllers
                 return RedirectToAction(nameof(Index));
             }
 
+            if (!ModelState.IsValid)
+            {
+                var errors = string.Join(", ", ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage));
+                TempData["ErrorMessage"] = $"Invalid data for creation: {errors}";
+                return RedirectToAction(nameof(Index));
+            }
+
             try
             {
-                if (ModelState.IsValid)
+                var category = new Category
                 {
-                    var category = new Category
-                    {
-                        CategoryName = vm.CategoryName,
-                        CategoryDesciption = vm.CategoryDesciption,
-                        ParentCategoryId = vm.ParentCategoryId,
-                        IsActive = vm.CategoryStatus
-                    };
+                    CategoryName = vm.CategoryName,
+                    CategoryDesciption = vm.CategoryDesciption,
+                    ParentCategoryId = vm.ParentCategoryId,
+                    IsActive = vm.CategoryStatus
+                };
 
-                    await _categoryService.CreateCategoryAsync(category);
-                    TempData["SuccessMessage"] = "Category created successfully!";
-                    return RedirectToAction(nameof(Index));
-                }
+                await _categoryService.CreateCategoryAsync(category);
+                await _hubContext.Clients.All.SendAsync("LoadCategories");
+                TempData["SuccessMessage"] = "Category created successfully!";
             }
             catch (Exception ex)
             {
-                ModelState.AddModelError("", ex.Message);
+                TempData["ErrorMessage"] = ex.Message;
             }
 
-            vm.ParentCategories = (await _categoryService.GetActiveCategoriesAsync())
-                .Where(c => c.CategoryId != vm.ParentCategoryId)
-                .Select(c => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
-
-            // Avoid returning View; prepare for modal
-            return View(vm);
+            return RedirectToAction(nameof(Index));
         }
 
         [AuthorizeSession]
         public async Task<IActionResult> GetEditData(short id)
         {
+            if (!IsAdmin && !HasRole(1))
+                return Json(new { success = false, message = "No permission" });
+
+            // FIXED: Use GetAllCategoriesAsync to include inactive categories in parent list
+            var parentCategories = (await _categoryService.GetAllCategoriesAsync())
+                .Where(c => c.CategoryId != id)
+                .Select(c => new { Value = c.CategoryId.ToString(), Text = c.CategoryName })
+                .ToList();
+
             if (id <= 0)
-                return Json(new { success = false, message = "Invalid ID" });
+            {
+                return Json(new
+                {
+                    success = true,
+                    categoryId = 0,
+                    categoryName = "",
+                    categoryDesciption = "",
+                    parentCategoryId = (short?)null,
+                    categoryStatus = true,
+                    parentCategories
+                });
+            }
 
             var category = await _categoryService.GetCategoryByIdAsync(id);
             if (category == null)
                 return Json(new { success = false, message = "Category not found" });
 
-            if (!IsAdmin && !HasRole(1))
-                return Json(new { success = false, message = "No permission" });
-
-            var parentCategories = (await _categoryService.GetActiveCategoriesAsync())
-                .Where(c => c.CategoryId != id)
-                .Select(c => new { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
-
+            // FIXED: Return proper boolean value
             return Json(new
             {
                 success = true,
@@ -127,7 +145,7 @@ namespace FUNewsManagement.Controllers
                 categoryName = category.CategoryName,
                 categoryDesciption = category.CategoryDesciption,
                 parentCategoryId = category.ParentCategoryId,
-                categoryStatus = category.IsActive ?? true,
+                categoryStatus = category.IsActive == true, // Ensure boolean
                 parentCategories
             });
         }
@@ -138,30 +156,14 @@ namespace FUNewsManagement.Controllers
             if (id <= 0)
                 return NotFound();
 
-            var category = await _categoryService.GetCategoryByIdAsync(id);
-            if (category == null)
-                return NotFound();
-
             if (!IsAdmin && !HasRole(1))
             {
                 TempData["ErrorMessage"] = "You don't have permission to edit categories.";
                 return RedirectToAction(nameof(Index));
             }
 
-            var vm = new CategoryFormViewModel
-            {
-                CategoryId = category.CategoryId,
-                CategoryName = category.CategoryName,
-                CategoryDesciption = category.CategoryDesciption,
-                ParentCategoryId = category.ParentCategoryId,
-                CategoryStatus = category.IsActive ?? true
-            };
-
-            vm.ParentCategories = (await _categoryService.GetActiveCategoriesAsync())
-                .Where(c => c.CategoryId != id)
-                .Select(c => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
-
-            return View(vm);
+            TempData["ErrorMessage"] = "Use the modal in Index to edit categories.";
+            return RedirectToAction(nameof(Index));
         }
 
         [HttpPost]
@@ -169,7 +171,8 @@ namespace FUNewsManagement.Controllers
         [AuthorizeSession]
         public async Task<IActionResult> Edit(short id, CategoryFormViewModel vm)
         {
-            if (id != vm.CategoryId)
+            // FIXED: Handle nullable CategoryId properly
+            if (vm.CategoryId == null || id != vm.CategoryId.Value)
                 return NotFound();
 
             if (!IsAdmin && !HasRole(1))
@@ -178,35 +181,41 @@ namespace FUNewsManagement.Controllers
                 return RedirectToAction(nameof(Index));
             }
 
+            // DEBUG: Log the received values
+            System.Diagnostics.Debug.WriteLine($"Edit Category {id}: Name={vm.CategoryName}, Status={vm.CategoryStatus}");
+
+            if (!ModelState.IsValid)
+            {
+                var errors = string.Join(", ", ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage));
+                TempData["ErrorMessage"] = $"Invalid data for update: {errors}";
+                return RedirectToAction(nameof(Index));
+            }
+
             try
             {
-                if (ModelState.IsValid)
-                {
-                    var category = await _categoryService.GetCategoryByIdAsync(id);
-                    if (category == null)
-                        return NotFound();
+                var category = await _categoryService.GetCategoryByIdAsync(id);
+                if (category == null)
+                    return NotFound();
 
-                    category.CategoryName = vm.CategoryName;
-                    category.CategoryDesciption = vm.CategoryDesciption;
-                    category.ParentCategoryId = vm.ParentCategoryId;
-                    category.IsActive = vm.CategoryStatus;
+                System.Diagnostics.Debug.WriteLine($"Before update: IsActive={category.IsActive}");
 
-                    await _categoryService.UpdateCategoryAsync(category);
-                    TempData["SuccessMessage"] = "Category updated successfully!";
-                    return RedirectToAction(nameof(Index));
-                }
+                category.CategoryName = vm.CategoryName;
+                category.CategoryDesciption = vm.CategoryDesciption;
+                category.ParentCategoryId = vm.ParentCategoryId;
+                category.IsActive = vm.CategoryStatus;
+
+                System.Diagnostics.Debug.WriteLine($"After assignment: IsActive={category.IsActive}");
+
+                await _categoryService.UpdateCategoryAsync(category);
+                await _hubContext.Clients.All.SendAsync("LoadCategories");
+                TempData["SuccessMessage"] = "Category updated successfully!";
             }
             catch (Exception ex)
             {
-                ModelState.AddModelError("", ex.Message);
+                TempData["ErrorMessage"] = ex.Message;
             }
 
-            vm.ParentCategories = (await _categoryService.GetActiveCategoriesAsync())
-                .Where(c => c.CategoryId != id)
-                .Select(c => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
-
-            // Avoid returning View; prepare for modal
-            return View(vm);
+            return RedirectToAction(nameof(Index));
         }
 
         [HttpPost, ActionName("Delete")]
@@ -230,6 +239,7 @@ namespace FUNewsManagement.Controllers
                 }
 
                 await _categoryService.DeleteCategoryAsync(id);
+                await _hubContext.Clients.All.SendAsync("LoadCategories");
                 TempData["SuccessMessage"] = "Category deleted successfully!";
             }
             catch (Exception ex)

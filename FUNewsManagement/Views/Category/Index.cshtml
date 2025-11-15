@@ -1,18 +1,17 @@
-﻿@* Updated Index.cshtml for Category *@
+﻿@* Fixed Index.cshtml for Category - Status Update Working *@
 @model FUNewsManagement.Models.ViewModels.CategoryListViewModel
-@using FUNewsManagement.Helpers  @* Import SessionManager *@
-@using Services  @* Import UserRoles từ Services namespace *@
+@using FUNewsManagement.Helpers
+@using Services
 @{
     ViewData["Title"] = "Categories";
-    var session = Context.Session;  
-    var userRole = session.GetCurrentUserRole(); 
+    var session = Context.Session;
+    var userRole = session.GetCurrentUserRole();
     bool canManage = session.IsLoggedIn() &&
-                     (userRole == UserRoles.Staff || userRole == UserRoles.Admin);  // Staff=1, Admin=3
+                     (userRole == UserRoles.Staff || userRole == UserRoles.Admin);
 }
 
 <h1>Categories</h1>
 
-<!-- Hiển thị Success/Error Message từ TempData -->
 @if (TempData["SuccessMessage"] != null)
 {
     <div class="alert alert-success alert-dismissible fade show" role="alert">
@@ -34,7 +33,7 @@
     <button type="submit" class="btn btn-primary">Search</button>
     @if (canManage)
     {
-        <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#categoryModal" onclick="loadCreateForm('Category')">Create</button>
+        <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#categoryModal" onclick="loadCreateForm()">Create</button>
     }
 </form>
 
@@ -43,22 +42,33 @@
         <tr>
             <th>Name</th>
             <th>Description</th>
-            <th>Status</th>@if(canManage){
-            <th>Actions</th>
-                        }
+            <th>Status</th>
+            @if (canManage)
+            {
+                <th>Actions</th>
+            }
         </tr>
     </thead>
     <tbody>
-        @foreach (var item in Model.Categories.Where(c => c.IsActive == true)) // Active only for public
+        @foreach (var item in canManage ? Model.Categories : Model.Categories.Where(c => c.IsActive == true))
         {
-            <tr>
+            <tr class="@(item.IsActive == false ? "table-secondary" : "")">
                 <td><a asp-action="Details" asp-route-id="@item.CategoryId">@item.CategoryName</a></td>
                 <td>@item.CategoryDesciption</td>
-                <td>@(item.IsActive == true ? "Active" : "Inactive")</td>
+                <td>
+                    @if (item.IsActive == true)
+                    {
+                        <span class="badge bg-success">Active</span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-secondary">Inactive</span>
+                    }
+                </td>
                 @if (canManage)
                 {
                     <td>
-                        <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#categoryModal" onclick="loadEditForm('@item.CategoryId', 'Category')">Edit</button>
+                        <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#categoryModal" onclick="loadEditForm('@item.CategoryId')">Edit</button>
                         <form asp-action="Delete" method="post" style="display:inline;" onsubmit="return confirm('Delete only if no news associated?')">
                             @Html.AntiForgeryToken()
                             <input type="hidden" name="id" value="@item.CategoryId" />
@@ -73,7 +83,6 @@
 
 @if (canManage)
 {
-    <!-- Modal similar to News, with fields for Name, Description, ParentCategory, Status -->
     <div class="modal fade" id="categoryModal">
         <div class="modal-dialog">
             <div class="modal-content">
@@ -85,12 +94,28 @@
                     @Html.AntiForgeryToken()
                     <div class="modal-body">
                         <input type="hidden" name="CategoryId" id="catId" />
-                        <div class="mb-3"><label>Name <span class="text-danger">*</span></label><input name="CategoryName" id="catName" class="form-control" required /></div>
-                        <div class="mb-3"><label>Description</label><textarea name="CategoryDesciption" id="catDesciption" class="form-control"></textarea></div>
-                        <div class="mb-3"><label>Parent</label><select name="ParentCategoryId" id="parentCatSelect" class="form-select"></select></div>
-                        <div class="mb-3 form-check"><input type="checkbox" name="CategoryStatus" id="catStatus" checked class="form-check-input" /><label>Active</label></div>
+                        <div class="mb-3">
+                            <label>Name <span class="text-danger">*</span></label>
+                            <input name="CategoryName" id="catName" class="form-control" required />
+                        </div>
+                        <div class="mb-3">
+                            <label>Description</label>
+                            <textarea name="CategoryDesciption" id="catDesciption" class="form-control"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label>Parent</label>
+                            <select name="ParentCategoryId" id="parentCatSelect" class="form-select"></select>
+                        </div>
+                        <!-- FIXED: Remove hidden input, use only checkbox with proper value binding -->
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" name="CategoryStatus" id="catStatus" value="true" checked class="form-check-input" />
+                            <label class="form-check-label" for="catStatus">Active</label>
+                        </div>
                     </div>
-                    <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button><button type="submit" class="btn btn-primary">Save</button></div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="submit" class="btn btn-primary">Save</button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -98,40 +123,80 @@
 }
 
 @section Scripts {
-    <!-- Similar JS for loadCreateForm, loadEditForm with AJAX -->
     <script>
         function loadCreateForm() {
-            document.getElementById('categoryForm').action = '@Url.Action("Create")';
-            document.getElementById('catId').value = '';
-            document.getElementById('catName').value = '';
-            document.getElementById('catDesciption').value = '';
-            document.getElementById('parentCatSelect').innerHTML = '<option value="">-- Select Parent --</option>'; // Clear and reload if needed
-            document.getElementById('catStatus').checked = true;
-            document.querySelector('#categoryModal .modal-title').textContent = 'Create Category';
-        }
-        function loadEditForm(id) {
-            // AJAX to fetch data and populate form
-            fetch('/Category/GetEditData/' + id)
-                .then(response => response.json())
+            fetch('/Category/GetEditData/0')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
                 .then(data => {
                     if (data.success) {
-                        document.getElementById('catId').value = data.categoryId;
-                        document.getElementById('catName').value = data.categoryName;
-                        document.getElementById('catDesciption').value = data.categoryDesciption;
-                        document.getElementById('parentCatSelect').value = data.parentCategoryId;
+                        document.getElementById('catId').value = '';
+                        document.getElementById('catName').value = '';
+                        document.getElementById('catDesciption').value = '';
+                        document.getElementById('catStatus').checked = true;
 
-                        // Populate parent options
                         const select = document.getElementById('parentCatSelect');
                         select.innerHTML = '<option value="">-- Select Parent --</option>';
                         data.parentCategories.forEach(cat => {
                             const option = document.createElement('option');
-                            option.value = cat.Value;
-                            option.text = cat.Text;
+                            option.value = cat.value;
+                            option.text = cat.text;
                             select.appendChild(option);
                         });
 
-                        document.getElementById('catStatus').checked = data.categoryStatus;
-                        document.getElementById('categoryForm').action = '@Url.Action("Edit")';
+                        document.getElementById('categoryForm').action = '@Url.Action("Create", "Category")';
+                        document.querySelector('#categoryModal .modal-title').textContent = 'Create Category';
+                    } else {
+                        alert('Error loading data for create: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to load create data: ' + error.message);
+                });
+        }
+
+        function loadEditForm(id) {
+            fetch('/Category/GetEditData/' + id)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        console.log('Edit data received:', data);
+                        console.log('CategoryStatus value:', data.categoryStatus, 'Type:', typeof data.categoryStatus);
+
+                        // Set form fields
+                        document.getElementById('catId').value = data.categoryId;
+                        document.getElementById('catName').value = data.categoryName;
+                        document.getElementById('catDesciption').value = data.categoryDesciption || '';
+
+                        // CRITICAL FIX: Set checkbox state correctly
+                        const checkbox = document.getElementById('catStatus');
+                        checkbox.checked = (data.categoryStatus === true);
+                        console.log('Checkbox set to:', checkbox.checked);
+
+                        const select = document.getElementById('parentCatSelect');
+                        select.innerHTML = '<option value="">-- Select Parent --</option>';
+                        data.parentCategories.forEach(cat => {
+                            const option = document.createElement('option');
+                            option.value = cat.value;
+                            option.text = cat.text;
+                            if (cat.value == data.parentCategoryId) {
+                                option.selected = true;
+                            }
+                            select.appendChild(option);
+                        });
+
+                        // CRITICAL FIX: Correct form action with ID in URL
+                        document.getElementById('categoryForm').action = '/Category/Edit/' + data.categoryId;
                         document.querySelector('#categoryModal .modal-title').textContent = 'Edit Category';
                     } else {
                         alert('Error loading data: ' + data.message);
@@ -139,8 +204,40 @@
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    alert('Failed to load edit data');
+                    alert('Failed to load edit data: ' + error.message);
                 });
         }
+
+        // Handle form submit - Ensure CategoryStatus is submitted correctly
+        document.getElementById('categoryForm')?.addEventListener('submit', function(e) {
+            const checkbox = document.getElementById('catStatus');
+
+            // If checkbox is unchecked, we need to ensure 'false' is sent
+            if (!checkbox.checked) {
+                // Create a hidden input to send false value
+                const hiddenInput = document.createElement('input');
+                hiddenInput.type = 'hidden';
+                hiddenInput.name = 'CategoryStatus';
+                hiddenInput.value = 'false';
+                this.appendChild(hiddenInput);
+
+                // Disable checkbox so it doesn't send value
+                checkbox.disabled = true;
+
+                // Re-enable after a short delay (after form submission starts)
+                setTimeout(() => {
+                    checkbox.disabled = false;
+                }, 100);
+            }
+
+            // Log form data for debugging
+            const formData = new FormData(this);
+            console.log('Form data being submitted:');
+            for (let pair of formData.entries()) {
+                console.log(pair[0] + ': ' + pair[1]);
+            }
+        });
     </script>
+    <script src="~/lib/microsoft/signalr/dist/browser/signalr.js"></script>
+    <script src="~/js/site.js"></script>
 }

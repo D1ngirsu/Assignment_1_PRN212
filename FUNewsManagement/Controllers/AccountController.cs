@@ -1,9 +1,11 @@
 ﻿using BusinessObjects.Models;
 using FUNewsManagement.Filters;
 using FUNewsManagement.Helpers;
+using FUNewsManagement.Hubs;
 using FUNewsManagement.Models.ViewModels;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Services;
 
 namespace FUNewsManagement.Controllers
@@ -12,11 +14,13 @@ namespace FUNewsManagement.Controllers
     {
         private readonly IAuthenticationService _authService;
         private readonly ISystemAccountService _accountService;
+        private readonly IHubContext<SignalrServer> _hubContext;
 
-        public AccountController(IAuthenticationService authService, ISystemAccountService accountService)
+        public AccountController(IAuthenticationService authService, ISystemAccountService accountService, IHubContext<SignalrServer> hubContext)  // Thêm tham số
         {
             _authService = authService;
             _accountService = accountService;
+            _hubContext = hubContext;  // Gán
         }
 
         #region Authentication
@@ -264,6 +268,7 @@ namespace FUNewsManagement.Controllers
                 };
 
                 await _accountService.CreateAccountAsync(newAccount);
+                await _hubContext.Clients.All.SendAsync("LoadAccounts");
                 TempData["SuccessMessage"] = "Tạo tài khoản thành công!";
                 return RedirectToAction(nameof(ManageAccounts));
             }
@@ -349,7 +354,7 @@ namespace FUNewsManagement.Controllers
                 account.AccountRole = vm.AccountRole;
 
                 await _accountService.UpdateAccountAsync(account);
-
+                await _hubContext.Clients.All.SendAsync("LoadAccounts");
                 // Update session if editing own account
                 if (CurrentUserId == id)
                 {
@@ -394,6 +399,7 @@ namespace FUNewsManagement.Controllers
                 }
 
                 await _accountService.DeleteAccountAsync(id);
+                await _hubContext.Clients.All.SendAsync("LoadAccounts");
                 TempData["SuccessMessage"] = $"Đã xóa tài khoản '{account.AccountName}' thành công!";
             }
             catch (Exception ex)

@@ -1,9 +1,11 @@
 ﻿// Updated NewsController.cs (adjusted to use List<string> for SelectedTagIds, and integrate validation messages)
 using BusinessObjects.Models;
 using FUNewsManagement.Filters;
+using FUNewsManagement.Hubs;
 using FUNewsManagement.Models.ViewModels;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
+using Microsoft.AspNetCore.SignalR;
 using Services;
 using System;
 using System.Collections.Generic;
@@ -18,15 +20,18 @@ namespace FUNewsManagement.Controllers
         private readonly INewsArticleService _newsService;
         private readonly ICategoryService _categoryService;
         private readonly ITagService _tagService;
+        private readonly IHubContext<SignalrServer> _hubContext;
 
         public NewsController(
             INewsArticleService newsService,
             ICategoryService categoryService,
-            ITagService tagService)
+            ITagService tagService,
+            IHubContext<SignalrServer> hubContext)  // Thêm tham số này
         {
             _newsService = newsService;
             _categoryService = categoryService;
             _tagService = tagService;
+            _hubContext = hubContext;  // Gán
         }
 
         public async Task<IActionResult> Index(string? keyword = null, int page = 1)
@@ -141,7 +146,7 @@ namespace FUNewsManagement.Controllers
                 };
 
                 await _newsService.CreateNewsAsync(newsArticle);
-
+                await _hubContext.Clients.All.SendAsync("LoadNews");
                 // Handle tags: Add to NewsTag junction table
                 if (vm.SelectedTagIds != null && vm.SelectedTagIds.Any())
                 {
@@ -201,6 +206,7 @@ namespace FUNewsManagement.Controllers
                 existing.ModifiedDate = DateTime.Now;
 
                 await _newsService.UpdateNewsAsync(existing);
+                await _hubContext.Clients.All.SendAsync("LoadNews");
 
                 // Handle tags: Remove old and add new to NewsTag junction table
                 await _newsService.RemoveAllTagsFromNewsAsync(vm.NewsArticleId);
@@ -272,6 +278,7 @@ namespace FUNewsManagement.Controllers
                 // Remove tags before deleting news (cascade or explicit)
                 await _newsService.RemoveAllTagsFromNewsAsync(id);
                 await _newsService.DeleteNewsAsync(id);
+                await _hubContext.Clients.All.SendAsync("LoadNews");
                 TempData["SuccessMessage"] = "News article deleted successfully!";
                 return RedirectToAction(nameof(Index));
             }
@@ -296,6 +303,7 @@ namespace FUNewsManagement.Controllers
             try
             {
                 await _newsService.PublishNewsAsync(id);
+                await _hubContext.Clients.All.SendAsync("LoadNews");
                 TempData["SuccessMessage"] = "News article published successfully!";
             }
             catch (Exception ex)

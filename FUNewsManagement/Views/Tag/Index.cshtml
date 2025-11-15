@@ -51,7 +51,7 @@
                 @if (canManage)
                 {
                     <td>
-                        <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#tagModal" onclick="loadEditForm('@item.TagId', 'Tag')">Edit</button>
+                        <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#tagModal" onclick="loadEditForm('@item.TagId')">Edit</button>
                         <form asp-action="Delete" method="post" style="display:inline;" onsubmit="return confirm('Are you sure?')">
                             @Html.AntiForgeryToken()
                             <input type="hidden" name="id" value="@item.TagId" />
@@ -91,22 +91,29 @@
 @section Scripts {
     <script>
         function loadCreateForm() {
-            document.getElementById('tagForm').action = '@Url.Action("Create")';
+            document.getElementById('tagForm').action = '@Url.Action("Create", "Tag")';  // Đúng cho Create (không cần id)
             document.getElementById('tagId').value = '';
             document.getElementById('tagName').value = '';
             document.getElementById('tagNote').value = '';
             document.querySelector('#tagModal .modal-title').textContent = 'Create Tag';
         }
+
         function loadEditForm(id) {
             // AJAX to fetch data and populate form
             fetch('/Tag/GetEditData/' + id)
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
                 .then(data => {
                     if (data.success) {
                         document.getElementById('tagId').value = data.tagId;
                         document.getElementById('tagName').value = data.tagName;
                         document.getElementById('tagNote').value = data.note;
-                        document.getElementById('tagForm').action = '@Url.Action("Edit")';
+                        // Sửa ở đây: Set action đến Edit với id (ví dụ: /Tag/Edit/5)
+                        document.getElementById('tagForm').action = '@Url.Action("Edit", "Tag")' + '/' + data.tagId;
                         document.querySelector('#tagModal .modal-title').textContent = 'Edit Tag';
                     } else {
                         alert('Error loading data: ' + data.message);
@@ -114,8 +121,10 @@
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    alert('Failed to load edit data');
+                    alert('Failed to load edit data: ' + error.message);
                 });
         }
     </script>
+    <script src="~/lib/microsoft/signalr/dist/browser/signalr.js"></script>
+    <script src="~/js/site.js"></script>
 }

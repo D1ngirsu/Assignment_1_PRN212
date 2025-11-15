@@ -1,5 +1,6 @@
 ﻿using DataAccessObject;
 using DataAccessObjects;
+using FUNewsManagement.Hubs;
 using Microsoft.EntityFrameworkCore;
 using Repositories;
 using Services;
@@ -35,6 +36,7 @@ builder.Services.AddScoped<INewsArticleService, NewsArticleService>();
 builder.Services.AddScoped<ISystemAccountService, SystemAccountService>();
 builder.Services.AddScoped<ITagService, TagService>();
 builder.Services.AddScoped<Services.IAuthenticationService, Services.AuthenticationService>();
+builder.Services.AddSignalR();
 
 // ==================== HTTP CONTEXT ACCESSOR ====================
 builder.Services.AddHttpContextAccessor();
@@ -64,7 +66,7 @@ app.UseRouting();
 
 // ==================== SESSION MIDDLEWARE (QUAN TRỌNG) ====================
 app.UseSession();
-
+app.MapHub<SignalrServer>("/SignalrServer");
 app.UseAuthorization();
 
 app.MapControllerRoute(

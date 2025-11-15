@@ -63,5 +63,29 @@ namespace DataAccessObjects
                 .Include(c => c.ParentCategory)
                 .FirstOrDefaultAsync(c => c.CategoryId == (short)id);
         }
+
+        // CRITICAL FIX: Override UpdateAsync to handle nullable bool properly
+        public override async Task UpdateAsync(Category entity)
+        {
+            // Get the existing tracked entity
+            var existingEntity = await _dbSet.FindAsync(entity.CategoryId);
+
+            if (existingEntity == null)
+            {
+                throw new KeyNotFoundException($"Category with ID {entity.CategoryId} not found");
+            }
+
+            // Explicitly update each property to ensure nullable bool is handled correctly
+            existingEntity.CategoryName = entity.CategoryName;
+            existingEntity.CategoryDesciption = entity.CategoryDesciption;
+            existingEntity.ParentCategoryId = entity.ParentCategoryId;
+
+            // CRITICAL: Explicitly set IsActive (nullable bool needs special handling)
+            existingEntity.IsActive = entity.IsActive;
+
+            // Mark as modified and save
+            _context.Entry(existingEntity).State = EntityState.Modified;
+            await _context.SaveChangesAsync();
+        }
     }
 }

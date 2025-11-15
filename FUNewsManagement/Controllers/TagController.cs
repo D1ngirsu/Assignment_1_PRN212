@@ -1,8 +1,10 @@
 ﻿// Updated TagController.cs
 using BusinessObjects.Models;
 using FUNewsManagement.Filters;
+using FUNewsManagement.Hubs;
 using FUNewsManagement.Models.ViewModels;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Services;
 using System.Linq;
 
@@ -11,10 +13,12 @@ namespace FUNewsManagement.Controllers
     public class TagController : BaseController
     {
         private readonly ITagService _tagService;
+        private readonly IHubContext<SignalrServer> _hubContext;
 
-        public TagController(ITagService tagService)
+        public TagController(ITagService tagService, IHubContext<SignalrServer> hubContext)
         {
             _tagService = tagService;
+            _hubContext = hubContext;
         }
 
         public async Task<IActionResult> Index(string? keyword = null)
@@ -86,6 +90,7 @@ namespace FUNewsManagement.Controllers
                     };
 
                     await _tagService.CreateTagAsync(tag);
+                    await _hubContext.Clients.All.SendAsync("LoadTags");
                     TempData["SuccessMessage"] = "Tag created successfully!";
                     return RedirectToAction(nameof(Index));
                 }
@@ -174,6 +179,7 @@ namespace FUNewsManagement.Controllers
                     tag.Note = vm.Note;
 
                     await _tagService.UpdateTagAsync(tag);
+                    await _hubContext.Clients.All.SendAsync("LoadTags");
                     TempData["SuccessMessage"] = "Tag updated successfully!";
                     return RedirectToAction(nameof(Index));
                 }
@@ -201,6 +207,7 @@ namespace FUNewsManagement.Controllers
             try
             {
                 await _tagService.DeleteTagAsync(id);
+                await _hubContext.Clients.All.SendAsync("LoadTags");
                 TempData["SuccessMessage"] = "Tag deleted successfully!";
             }
             catch (Exception ex)
