@@ -66,7 +66,7 @@ app.UseRouting();
 
 // ==================== SESSION MIDDLEWARE (QUAN TRỌNG) ====================
 app.UseSession();
-app.MapHub<SignalrServer>("/SignalrServer");
+app.MapHub<SignalrServer>("/signalRServer");
 app.UseAuthorization();
 
 app.MapControllerRoute(

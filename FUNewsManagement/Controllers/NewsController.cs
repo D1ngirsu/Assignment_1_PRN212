@@ -326,22 +326,36 @@ namespace FUNewsManagement.Controllers
             if (!CurrentUserId.HasValue)
                 return RedirectToAction("Login", "Account");
 
-            var myNews = await _newsService.GetNewsByAuthorAsync(CurrentUserId.Value);
+            // Lấy tất cả tin tức (giống Index)
+            IEnumerable<NewsArticle> news;
+
             if (!string.IsNullOrWhiteSpace(keyword))
             {
-                myNews = myNews.Where(n => n.NewsTitle.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+                // Tìm kiếm trong tất cả tin tức
+                news = await _newsService.SearchNewsAsync(keyword);
+            }
+            else
+            {
+                // Lấy tất cả tin tức
+                news = await _newsService.GetAllNewsAsync();
             }
 
+            // LỌC CHỈ TIN DO NGƯỜI DÙNG HIỆN TẠI TẠO
+            news = news.Where(n => n.CreatedById == CurrentUserId.Value);
+
+            // Phân trang
             int pageSize = 10;
-            var totalItems = myNews.Count();
-            var pagedNews = myNews.OrderByDescending(n => n.CreatedDate)
-                                  .Skip((page - 1) * pageSize)
-                                  .Take(pageSize)
-                                  .ToList();
+            var totalItems = news.Count();
+            var pagedNews = news.OrderByDescending(n => n.CreatedDate)
+                                .Skip((page - 1) * pageSize)
+                                .Take(pageSize)
+                                .ToList();
             int totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
 
+            // Load categories để hiển thị
             var categories = await _categoryService.GetAllCategoriesAsync();
             var catDict = categories.ToDictionary(c => c.CategoryId, c => c);
+
             foreach (var article in pagedNews)
             {
                 if (article.CategoryId.HasValue && catDict.TryGetValue(article.CategoryId.Value, out var cat))
@@ -350,6 +364,7 @@ namespace FUNewsManagement.Controllers
                 }
             }
 
+            // Tạo ViewModel (MyNewsViewModel kế thừa từ NewsListViewModel)
             var vm = new MyNewsViewModel
             {
                 NewsArticles = pagedNews,
@@ -361,9 +376,19 @@ namespace FUNewsManagement.Controllers
                 TotalItems = totalItems
             };
 
-            ViewBag.Categories = categories.Select(c => new SelectListItem { Value = c.CategoryId.ToString(), Text = c.CategoryName }).ToList();
+            // ViewBag cho dropdown trong modal
+            ViewBag.Categories = categories.Select(c => new SelectListItem
+            {
+                Value = c.CategoryId.ToString(),
+                Text = c.CategoryName
+            }).ToList();
+
             var tags = await _tagService.GetAllTagsAsync();
-            ViewBag.Tags = tags.Select(t => new SelectListItem { Value = t.TagId.ToString(), Text = t.TagName }).ToList();
+            ViewBag.Tags = tags.Select(t => new SelectListItem
+            {
+                Value = t.TagId.ToString(),
+                Text = t.TagName
+            }).ToList();
 
             return View(vm);
         }
